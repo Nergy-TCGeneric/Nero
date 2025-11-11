@@ -1,113 +1,70 @@
-Chisel Project Template
-=======================
+# sNPU Nero
 
-You've done the [Chisel Bootcamp](https://github.com/freechipsproject/chisel-bootcamp), and now you
-are ready to start your own Chisel project.  The following procedure should get you started
-with a clean running [Chisel3](https://www.chisel-lang.org/) project.
+Nero is a Spiking Neural Processing Unit(sNPU) designed to accelerate [[Spiking Neural Network (SNN)]]. It's designed to address existing [[Deep Neural Network]] models' limitation technically:
 
-## Make your own Chisel3 project
+> Large models are increasingly expensive and inefficient to train.
 
-### Dependencies
+But also aims to become 'personal alternative' against the centralized, dominant AI paradigm. Modern large-scale AIs raise two fundamental questions:
 
-#### JDK 11 or newer
+1. **How** are they trained?
+2. **Where** does their training data come from?
 
-We recommend using Java 11 or later LTS releases. While Chisel itself works with Java 8, our preferred build tool Mill requires Java 11. You can install the JDK as your operating system recommends, or use the prebuilt binaries from [Adoptium](https://adoptium.net/) (formerly AdoptOpenJDK).
+Both the pre/post-training process are largely closed to the public, so we rely on speculation and second-hand reports at best. Meanwhile, the DNN's philosophy: "The more data, the better" has made these systems voracious data consumers, often at the expense of individuals' privacy.
 
-#### SBT or mill
+## What Nero Ecosystem offers
 
-SBT is the most common build tool in the Scala community. You can download it [here](https://www.scala-sbt.org/download.html).
-Mill is another Scala/Java build tool preferred by Chisel's developers.
-This repository includes a bootstrap script `./mill` so that no installation is necessary.
-You can read more about Mill on its website: https://mill-build.org.
+Nero ecosystem, from sNPU hardware to Synthesizer toolchain, proposes a different path grounded in transparency, autonomy and accessiblity. What can already be done with local DNNs become simpler, clearer and more personal with Nero:
 
-#### Verilator
+1. **You decide how to train.**
+		Feed your own spike stimuli with your own configuration. You can even tweak the sNPU architecture itself if you wish. Everything is open and under your control.
+2. **You decide what to train on.**
+		Keep data personal and local, share selectively among trusted peers or collaborate globally by exchanging models, inputs and configurations.
 
-The test with `svsim` needs Verilator installed.
-See Verilator installation instructions [here](https://verilator.org/guide/latest/install.html).
+With a physical substrate(sNPU itself) and growing library of discovered models and datasets, whether it's yours or community's, Nero ecosystem helps anyone to begin right away.
 
-### How to get started
+Rather than relying on centralized AI infrastructure, Nero ecosystem aspires to **empower the individuals**: enabling users to build, exchange and federate self-learning systems at low cost. All open, inspectable and truly their own.
 
-#### Create a repository from the template
+# Nero's Philosophy
 
-This repository is a Github template. You can create your own repository from it by clicking the green `Use this template` in the top right.
-Please leave `Include all branches` **unchecked**; checking it will pollute the history of your new repository.
-For more information, see ["Creating a repository from a template"](https://docs.github.com/en/free-pro-team@latest/github/creating-cloning-and-archiving-repositories/creating-a-repository-from-a-template).
+## Nero as an 'explorer' on continuum of learning
 
-#### Wait for the template cleanup workflow to complete
+Refer: [[Spectrums of Learning]]
 
-After using the template to create your own blank project, please wait a minute or two for the `Template cleanup` workflow to run which will removes some template-specific stuff from the repository (like the LICENSE).
-Refresh the repository page in your browser until you see a 2nd commit by `actions-user` titled `Template cleanup`.
+Learning is not a binary subject. [[Gradient Descent]](GD), [[Evolutionary Algorithm]](EA) and [[STDP]] just occupy different regions of the same continuum and Nero's role is to explore this landscape experimentally. It does not fit a single model to task-ready, but it **discovers that very candidates themselves**.
 
+In Nero ecosystem, an optimization is a *post-hoc* process. Given high-level objectives and constraints, Nero first searches the space to uncover 'viable' structures. Then it lets user take an extra mile with discovered models. It's up to user to discard, prune or even compose with other models to test its capability to extreme degree.
 
-#### Clone your repository
+## The call of 'synthesizer'
 
-Once you have created a repository from this template and the `Template cleanup` workflow has completed, you can click the green button to get a link for cloning your repository.
-Note that it is easiest to push to a repository if you set up SSH with Github, please see the [related documentation](https://docs.github.com/en/free-pro-team@latest/github/authenticating-to-github/connecting-to-github-with-ssh). SSH is required for pushing to a Github repository when using two-factor authentication.
+Nero is designed to be a standalone, discrete peripheral connected with host environment. Whether it's being shipped on FPGA, ASIC or whatever possible does not matter.
 
-```sh
-git clone git@github.com:%REPOSITORY%.git
-cd %NAME%
-```
-(The variables wrapped in `%` will be filled in by the template cleanup) <!-- #REMOVE-ON-CLEANUP# -->
+Nero alone can't do anything. Someone must instruct to make it work. However unlike the conventional compilers which translate high-level language construct to something more machine-level friendly, Nero must walk in the opposite direction.
 
-#### Set project organization and name in build.sbt
+Compilers already know the code written by user and *user knows what it does*. Their objective is simply, "Make it the most efficient form". Nero Compiler, on the other hand, has no information but a high-level objective and constraints. There's no explicit instruction, like code to achieve the goal.
 
-The cleanup workflow will have attempted to provide sensible defaults for `ThisBuild / organization` and `name` in the `build.sbt`.
-Feel free to use your text editor of choice to change them as you see fit.
+Also, unlike the typical DNN models which introduce new block for different needs, Nero just have to rewire the underlying SNN neurons. Typical [[Neural Architecture Search]](NAS) falls short for big models and assumes user's knowledge about their models, but Nero's approach dramatically lowers the hurdle for discovering new models as it only asks user a 'goal' and 'constraints', therefore help users find a scalable approach easily while physical limit allows.
 
-#### Clean up the README.md file
+That is, a typical compiler runs top-down. Nero compiler is the opposite: "bottom-up". This makes the Nero compiler not an ordinary compiler: *A morphogenetic model explorer*, or ***synthesizer*** if it's called.
 
-Again, use you editor of choice to make the README specific to your project.
+# Flow
 
-#### Add a LICENSE file
+1. User define the high-level goals and constraints. It's up to user's call how to lower down such 'requirement' into explicit and precise extent. (Goal and constraint definition)
+2. Once a goal is established, the Nero synthesizer then places neuron randomly or given preset. (Initialization)
+3. Given an input stimuli, neurons on Nero will spike and emit an output over time. after it's finished it'll check if it meets a goal requirement. (Test) 
+4. If it succeeded, mark it as 'complete' and report. (Finish)
+5. Otherwise, Nero synthesizer changes neuron arrangement and parameters and run it again. Run until it hits the constraint limit or timeout. (Evolution)
+6. If everything fails, mark it as 'failed' and report (Finish)
 
-It is important to have a LICENSE for open source (or closed source) code.
-This template repository has the Unlicense in order to allow users to add any license they want to derivative code.
-The Unlicense is stripped when creating a repository from this template so that users do not accidentally unlicense their own work.
+# License
 
-For more information about a license, check out the [Github Docs](https://docs.github.com/en/free-pro-team@latest/github/building-a-strong-community/adding-a-license-to-a-repository).
+Nero is released under the MIT License: fully open, modifiable, and free for any purpose.
 
-#### Commit your changes
-```sh
-git commit -m 'Starting %NAME%'
-git push origin main
-```
+This project was created with a single guiding principle:
 
-### Did it work?
+> Knowledge and learning architectures should be open to all.
 
-You should now have a working Chisel3 project.
+The value of Nero lies not in exclusivity, but in accessibility. You are free to use, extend, or commercialize this work, as long as credit to the original author is preserved.
 
-You can run the included test with:
-```sh
-sbt test
-```
+# Contact
 
-Alternatively, if you use Mill:
-```sh
-./mill %NAME%.test
-```
-
-You should see a whole bunch of output that ends with something like the following lines
-```
-[info] Tests: succeeded 1, failed 0, canceled 0, ignored 0, pending 0
-[info] All tests passed.
-[success] Total time: 5 s, completed Dec 16, 2020 12:18:44 PM
-```
-If you see the above then...
-
-### It worked!
-
-You are ready to go. We have a few recommended practices and things to do.
-
-* Use packages and following conventions for [structure](https://www.scala-sbt.org/1.x/docs/Directories.html) and [naming](http://docs.scala-lang.org/style/naming-conventions.html)
-* Package names should be clearly reflected in the testing hierarchy
-* Build tests for all your work
-* Read more about testing in SBT in the [SBT docs](https://www.scala-sbt.org/1.x/docs/Testing.html)
-* This template includes a [test dependency](https://www.scala-sbt.org/1.x/docs/Library-Dependencies.html#Per-configuration+dependencies) on [ScalaTest](https://www.scalatest.org/). This, coupled with `svsim` (included with Chisel) and `verilator`, are a starting point for testing Chisel generators.
-  * You can remove this dependency in the build.sbt file if you want to
-* Change the name of your project in the build.sbt file
-* Change your README.md
-
-## Problems? Questions?
-
-Check out the [Chisel Users Community](https://www.chisel-lang.org/community.html) page for links to get in contact!
+Gerald Nelson (nergy_nelson@proton.me)
