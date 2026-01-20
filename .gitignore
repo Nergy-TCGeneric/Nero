@@ -325,6 +325,12 @@ project/plugins/project/
 # Scala-IDE specific
 .scala_dependencies
 .worksheet
+
+# Scala build artifacts
+.bloop
+.metals
+project/*
+
 ### Java template
 *.class
 
