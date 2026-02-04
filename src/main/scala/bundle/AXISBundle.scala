@@ -38,14 +38,14 @@ object AXISBundle {
 }
 
 class NeroPayload(param: NeroParameters) extends Bundle {
-  val src = Wire(new Coordinate(param.tileCount))
-  val dest = Wire(new Coordinate(param.tileCount))
-  val local = Wire(new Coordinate(1))
-  val timestamp = UInt(param.timestampWidth.W)
+  val src = Output(new Coordinate(param.tileCount))
+  val dest = Output(new Coordinate(param.tileCount))
+  val local = Output(new Coordinate(1))
+  val timestamp = Output(UInt(param.timestampWidth.W))
 }
 
 class Coordinate(tileCount: Int) extends Bundle {
   private val wireWidth = tileCount.max(1)
-  val x = UInt(log2Ceil(wireWidth).W)
-  val y = UInt(log2Ceil(wireWidth).W)
+  val x = Output(UInt(log2Ceil(wireWidth).W))
+  val y = Output(UInt(log2Ceil(wireWidth).W))
 }
