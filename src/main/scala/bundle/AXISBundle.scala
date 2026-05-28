@@ -42,10 +42,24 @@ class NeroPayload(param: NeroParameters) extends Bundle {
   val dest = Output(new Coordinate(param.tileCount))
   val local = Output(new Coordinate(param.localTilesPerRouter / 2))
   val timestamp = Output(UInt(param.timestampWidth.W))
+
+  override def toPrintable: Printable = {
+    cf"Nero Payload:\n" +
+      cf"  Source coordinate: \n" +
+      cf"    $src\n" +
+      cf"  Destination coordinate: \n" +
+      cf"    $dest\n" +
+      cf"  Local coordinate: \n" +
+      cf"    $local\n" +
+      cf"  Timestamp: \n" +
+      cf"    $timestamp%d\n"
+  }
 }
 
 class Coordinate(tileCount: Int) extends Bundle {
   private val wireWidth = tileCount.max(1)
   val x = Output(UInt(log2Ceil(wireWidth).W))
   val y = Output(UInt(log2Ceil(wireWidth).W))
+
+  override def toPrintable: Printable = cf"($x%d, $y%d)"
 }

@@ -2,6 +2,8 @@ package nero.router
 
 import chisel3._
 import chisel3.util._
+import chisel3.probe.{Probe, ProbeValue, define, read}
+import chisel3.layer._
 
 import nero.parameters.NeroParameters
 import nero.bundle._
@@ -149,6 +151,81 @@ class Router(param: NeroParameters) extends Module {
     local3Outbound,
     Directions.Local3
   )
+
+  // Debugging probes
+  val northDecoderValid = IO(Probe(UInt(8.W), VerbosePrint))
+  val eastDecoderValid = IO(Probe(UInt(8.W), VerbosePrint))
+  val westDecoderValid = IO(Probe(UInt(8.W), VerbosePrint))
+  val southDecoderValid = IO(Probe(UInt(8.W), VerbosePrint))
+  val local0DecoderValid = IO(Probe(UInt(8.W), VerbosePrint))
+  val local1DecoderValid = IO(Probe(UInt(8.W), VerbosePrint))
+  val local2DecoderValid = IO(Probe(UInt(8.W), VerbosePrint))
+  val local3DecoderValid = IO(Probe(UInt(8.W), VerbosePrint))
+
+  val northArbiterReady = IO(Probe(UInt(8.W), VerbosePrint))
+  val eastArbiterReady = IO(Probe(UInt(8.W), VerbosePrint))
+  val westArbiterReady = IO(Probe(UInt(8.W), VerbosePrint))
+  val southArbiterReady = IO(Probe(UInt(8.W), VerbosePrint))
+  val local0ArbiterReady = IO(Probe(UInt(8.W), VerbosePrint))
+  val local1ArbiterReady = IO(Probe(UInt(8.W), VerbosePrint))
+  val local2ArbiterReady = IO(Probe(UInt(8.W), VerbosePrint))
+  val local3ArbiterReady = IO(Probe(UInt(8.W), VerbosePrint))
+
+  val northArbiterGrants = IO(Probe(UInt(8.W), VerbosePrint))
+  val eastArbiterGrants = IO(Probe(UInt(8.W), VerbosePrint))
+  val westArbiterGrants = IO(Probe(UInt(8.W), VerbosePrint))
+  val southArbiterGrants = IO(Probe(UInt(8.W), VerbosePrint))
+  val local0ArbiterGrants = IO(Probe(UInt(8.W), VerbosePrint))
+  val local1ArbiterGrants = IO(Probe(UInt(8.W), VerbosePrint))
+  val local2ArbiterGrants = IO(Probe(UInt(8.W), VerbosePrint))
+  val local3ArbiterGrants = IO(Probe(UInt(8.W), VerbosePrint))
+
+  block(VerbosePrint) {
+    val northDecoderValidProbe = ProbeValue(northDecoder.decoderValid)
+    val eastDecoderValidProbe = ProbeValue(eastDecoder.decoderValid)
+    val westDecoderValidProbe = ProbeValue(westDecoder.decoderValid)
+    val southDecoderValidProbe = ProbeValue(southDecoder.decoderValid)
+    val local0DecoderValidProbe = ProbeValue(local0Decoder.decoderValid)
+    val local1DecoderValidProbe = ProbeValue(local1Decoder.decoderValid)
+    val local2DecoderValidProbe = ProbeValue(local2Decoder.decoderValid)
+    val local3DecoderValidProbe = ProbeValue(local3Decoder.decoderValid)
+
+    define(northDecoderValid, northDecoderValidProbe)
+    define(eastDecoderValid, eastDecoderValidProbe)
+    define(westDecoderValid, westDecoderValidProbe)
+    define(southDecoderValid, southDecoderValidProbe)
+    define(local0DecoderValid, local0DecoderValidProbe)
+    define(local1DecoderValid, local1DecoderValidProbe)
+    define(local2DecoderValid, local2DecoderValidProbe)
+    define(local3DecoderValid, local3DecoderValidProbe)
+
+    val northArbiterReadyProbe = ProbeValue(northArbiter.slaveReadys)
+    val eastArbiterReadyProbe = ProbeValue(eastArbiter.slaveReadys)
+    val westArbiterReadyProbe = ProbeValue(westArbiter.slaveReadys)
+    val southArbiterReadyProbe = ProbeValue(southArbiter.slaveReadys)
+    val local0ArbiterReadyProbe = ProbeValue(local0Arbiter.slaveReadys)
+    val local1ArbiterReadyProbe = ProbeValue(local1Arbiter.slaveReadys)
+    val local2ArbiterReadyProbe = ProbeValue(local2Arbiter.slaveReadys)
+    val local3ArbiterReadyProbe = ProbeValue(local3Arbiter.slaveReadys)
+
+    define(northArbiterReady, northArbiterReadyProbe)
+    define(eastArbiterReady, eastArbiterReadyProbe)
+    define(westArbiterReady, westArbiterReadyProbe)
+    define(southArbiterReady, southArbiterReadyProbe)
+    define(local0ArbiterReady, local0ArbiterReadyProbe)
+    define(local1ArbiterReady, local1ArbiterReadyProbe)
+    define(local2ArbiterReady, local2ArbiterReadyProbe)
+    define(local3ArbiterReady, local3ArbiterReadyProbe)
+
+    define(northArbiterGrants, northArbiter.grants)
+    define(eastArbiterGrants, eastArbiter.grants)
+    define(westArbiterGrants, westArbiter.grants)
+    define(southArbiterGrants, southArbiter.grants)
+    define(local0ArbiterGrants, local0Arbiter.grants)
+    define(local1ArbiterGrants, local1Arbiter.grants)
+    define(local2ArbiterGrants, local2Arbiter.grants)
+    define(local3ArbiterGrants, local3Arbiter.grants)
+  }
 }
 
 // Defined private, as these act as a 'glue'.
@@ -188,6 +265,7 @@ private[router] class ArbiterWrapper(param: NeroParameters) extends Module {
   val slaveReadys = IO(Output(UInt(8.W)))
   val decoderValid = IO(Input(UInt(8.W)))
   val masterPayloads = IO(Input(Vec(8, new NeroPayload(param))))
+  val grants = IO(Output(Probe(UInt(8.W), VerbosePrint)))
 
   private val roundRobin = Module(
     new RoundRobinArbiter(4 + param.localTilesPerRouter)
@@ -205,4 +283,9 @@ private[router] class ArbiterWrapper(param: NeroParameters) extends Module {
       case (grant: Bool, payload: NeroPayload) => grant -> payload
     }
   )
+
+  block(VerbosePrint) {
+    val grantValue = ProbeValue(roundRobin.io.grant)
+    define(grants, grantValue)
+  }
 }

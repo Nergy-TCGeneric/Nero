@@ -7,9 +7,12 @@ import circt.stage.ChiselStage
 import chisel3._
 import chisel3.util.random.MaxPeriodGaloisLFSR
 import chisel3.util._
+import chisel3.util.experimental.BoringUtils
+import chisel3.probe.read
 import chisel3.simulator.scalatest.ChiselSim
 import chisel3.simulator.stimulus.RunUntilFinished
 import chisel3.simulator.HasSimulator
+import chisel3.layer._
 
 import nero.parameters.NeroParameters
 import nero.bundle.AXISBundle
@@ -18,6 +21,16 @@ import nero.util._
 private class AXISPacketFuzzer(seed: Int, param: NeroParameters)
     extends Module {
   val io = IO(new AXISBundle(param))
+
+  private class PosEdgeDetector extends Module {
+    val io = IO(new Bundle {
+      val in = Input(Bool())
+      val out = Output(Bool())
+    })
+
+    val prev = RegNext(io.in, false.B)
+    io.out := io.in && !prev
+  }
 
   val controlLFSR = Module(new MaxPeriodGaloisLFSR(8, Some(seed)))
   val dataLFSR = Module(new MaxPeriodGaloisLFSR(16, Some(seed)))
@@ -54,6 +67,18 @@ private class AXISPacketFuzzer(seed: Int, param: NeroParameters)
 
   when(io.payload.fire) {
     data := dataLFSR.io.out.asUInt
+  }
+
+  block(VerbosePrint) {
+    val edgeDetector = Module(new PosEdgeDetector)
+    edgeDetector.io.in := io.payload.valid
+
+    when(edgeDetector.io.out | io.payload.fire) {
+      val payload = io.payload.bits
+      printf(
+        cf"[$SimulationTime] $HierarchicalModuleName VALID asserted\n"
+      )
+    }
   }
 }
 
@@ -111,6 +136,15 @@ private class AXISPacketReceiver(seed: Int, param: NeroParameters)
     "Watchdog timeout: no packets were recevied for 1,024 cycles"
   )
 
+  block(VerbosePrint) {
+    when(io.payload.fire) {
+      val payload = io.payload.bits
+      printf(
+        cf"[$SimulationTime] $HierarchicalModuleName transaction received with payload:\n" +
+          cf"$payload"
+      )
+    }
+  }
 }
 
 private class AXISRouterTestHarness(seed: Int, param: NeroParameters)
@@ -143,6 +177,119 @@ private class AXISRouterTestHarness(seed: Int, param: NeroParameters)
     stop()
   }
 
+  block(VerbosePrint) {
+    when(
+      router.northInbound.payload.valid && router.northOutbound.payload.ready
+    ) {
+      val decoderValid = read(router.northDecoderValid)
+      val arbiterReady = read(router.northArbiterReady)
+      val arbiterGrants = read(router.northArbiterGrants)
+      printf(
+        cf"[$SimulationTime] Router north status:\n" +
+          cf"  Decoder valid: $decoderValid%b\n" +
+          cf"  North arbiter ready: $arbiterReady%b\n" +
+          cf"  North arbiter grants: $arbiterGrants%b\n"
+      )
+    }
+
+    when(
+      router.southInbound.payload.valid && router.southOutbound.payload.ready
+    ) {
+      val decoderValid = read(router.southDecoderValid)
+      val arbiterReady = read(router.southArbiterReady)
+      val arbiterGrants = read(router.southArbiterGrants)
+      printf(
+        cf"[$SimulationTime] Router south status:\n" +
+          cf"  Decoder valid: $decoderValid%b\n" +
+          cf"  South arbiter ready: $arbiterReady%b\n" +
+          cf"  South arbiter grants: $arbiterGrants%b\n"
+      )
+    }
+
+    when(
+      router.eastInbound.payload.valid && router.eastOutbound.payload.ready
+    ) {
+      val decoderValid = read(router.eastDecoderValid)
+      val arbiterReady = read(router.eastArbiterReady)
+      val arbiterGrants = read(router.eastArbiterGrants)
+      printf(
+        cf"[$SimulationTime] Router east status:\n" +
+          cf"  Decoder valid: $decoderValid%b\n" +
+          cf"  East arbiter ready: $arbiterReady%b\n" +
+          cf"  East arbiter grants: $arbiterGrants%b\n"
+      )
+    }
+
+    when(
+      router.westInbound.payload.valid && router.westOutbound.payload.ready
+    ) {
+      val decoderValid = read(router.westDecoderValid)
+      val arbiterReady = read(router.westArbiterReady)
+      val arbiterGrants = read(router.westArbiterGrants)
+      printf(
+        cf"[$SimulationTime] Router west status:\n" +
+          cf"  Decoder valid: $decoderValid%b\n" +
+          cf"  West arbiter ready: $arbiterReady%b\n" +
+          cf"  West arbiter grants: $arbiterGrants%b\n"
+      )
+    }
+
+    when(
+      router.local0Inbound.payload.valid && router.local0Inbound.payload.ready
+    ) {
+      val decoderValid = read(router.local0DecoderValid)
+      val arbiterReady = read(router.local0ArbiterReady)
+      val arbiterGrants = read(router.local0ArbiterGrants)
+      printf(
+        cf"[$SimulationTime] Router local0 status:\n" +
+          cf"  Decoder valid: $decoderValid%b\n" +
+          cf"  local0 arbiter ready: $arbiterReady%b\n" +
+          cf"  local0 arbiter grants: $arbiterGrants%b\n"
+      )
+    }
+
+    when(
+      router.local1Inbound.payload.valid && router.local1Outbound.payload.ready
+    ) {
+      val decoderValid = read(router.local1DecoderValid)
+      val arbiterReady = read(router.local1ArbiterReady)
+      val arbiterGrants = read(router.local1ArbiterGrants)
+      printf(
+        cf"[$SimulationTime] Router local1 status:\n" +
+          cf"  Decoder valid: $decoderValid%b\n" +
+          cf"  local1 arbiter ready: $arbiterReady%b\n" +
+          cf"  local1 arbiter grants: $arbiterGrants%b\n"
+      )
+    }
+
+    when(
+      router.local2Inbound.payload.valid && router.local2Outbound.payload.ready
+    ) {
+      val decoderValid = read(router.westDecoderValid)
+      val arbiterReady = read(router.westArbiterReady)
+      val arbiterGrants = read(router.westArbiterGrants)
+      printf(
+        cf"[$SimulationTime] Router local2 status:\n" +
+          cf"  Decoder valid: $decoderValid%b\n" +
+          cf"  local2 arbiter ready: $arbiterReady%b\n" +
+          cf"  local2 arbiter grants: $arbiterGrants%b\n"
+      )
+    }
+
+    when(
+      router.local3Inbound.payload.valid && router.local3Outbound.payload.ready
+    ) {
+      val decoderValid = read(router.westDecoderValid)
+      val arbiterReady = read(router.local3ArbiterReady)
+      val arbiterGrants = read(router.local3ArbiterGrants)
+      printf(
+        cf"[$SimulationTime] Router local3 status:\n" +
+          cf"  Decoder valid: $decoderValid%b\n" +
+          cf"  local3 arbiter ready: $arbiterReady%b\n" +
+          cf"  local3 arbiter grants: $arbiterGrants%b\n"
+      )
+    }
+  }
 }
 
 class RouterSpec extends AnyFunSpec with ChiselSim {
