@@ -40,7 +40,7 @@ object AXISBundle {
 class NeroPayload(param: NeroParameters) extends Bundle {
   val src = Output(new Coordinate(param.tileCount))
   val dest = Output(new Coordinate(param.tileCount))
-  val local = Output(new Coordinate(1))
+  val local = Output(new Coordinate(2))
   val timestamp = Output(UInt(param.timestampWidth.W))
 }
 
