@@ -28,19 +28,19 @@ class AXISBundle(param: NeroParameters) extends Bundle {
 
 object AXISBundle {
   implicit val axisView: DataView[VerilogAXISBundle, AXISBundle] = DataView(
-      vab => new AXISBundle(vab.param),
-      _.TVALID -> _.payload.valid,
-      _.TREADY -> _.payload.ready,
-      _.TID -> _.payload.bits.src,
-      _.TDEST -> _.payload.bits.dest,
-      _.TDATA -> _.payload.bits.timestamp
-    )
+    vab => new AXISBundle(vab.param),
+    _.TVALID -> _.payload.valid,
+    _.TREADY -> _.payload.ready,
+    _.TID -> _.payload.bits.src,
+    _.TDEST -> _.payload.bits.dest,
+    _.TDATA -> _.payload.bits.timestamp
+  )
 }
 
 class NeroPayload(param: NeroParameters) extends Bundle {
   val src = Output(new Coordinate(param.tileCount))
   val dest = Output(new Coordinate(param.tileCount))
-  val local = Output(new Coordinate(2))
+  val local = Output(new Coordinate(param.localTilesPerRouter / 2))
   val timestamp = Output(UInt(param.timestampWidth.W))
 }
 
