@@ -5,8 +5,13 @@ from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent.parent / "src"))
 
-from chronos.blocks import NeuronParameter, NeuronCore, SecondOrderShiftDecay, MembranePotentialUpdater
-from chronos.hardware_types import Q4_12, BoundedMap
+from chronos.blocks import (
+    NeuronParameter,
+    SecondOrderShiftDecay,
+    MembranePotentialUpdater,
+)
+from chronos.hardware_types import Q4_12, UInt, BoundedMap
+
 
 class ChronosQ4_12UnitTests(unittest.TestCase):
     def test_q4_12_integer_part_addition_works_as_expected(self):
@@ -26,14 +31,14 @@ class ChronosQ4_12UnitTests(unittest.TestCase):
     def test_q4_12_fraction_part_addition_works_as_expected(self):
         q1 = Q4_12.from_float(0.75)
         q2 = Q4_12.from_float(0.5)
-        
+
         expected = Q4_12.from_float(1.25)
         self.assertEqual(q1 + q2, expected)
 
     def test_q4_12_fraction_part_addition_with_negative__works_as_expected(self):
         q1 = Q4_12.from_float(-0.75)
         q2 = Q4_12.from_float(0.5)
-        
+
         expected = Q4_12.from_float(-0.25)
         self.assertEqual(q1 + q2, expected)
 
@@ -68,10 +73,11 @@ class ChronosQ4_12UnitTests(unittest.TestCase):
         expected = Q4_12.from_float(0)
         self.assertEqual(q1 + q2, expected)
 
+
 class ChronosBoundedMapUnitTests(unittest.TestCase):
     def test_map_returns_false_when_queried_non_existent_value(self):
         bounded_map = BoundedMap(4)
-        is_valid, data = bounded_map.get(0)
+        is_valid, _ = bounded_map.get(0)
         self.assertFalse(is_valid)
 
     def test_map_returns_true_when_queried_existent_value(self):
@@ -114,6 +120,7 @@ class ChronosBoundedMapUnitTests(unittest.TestCase):
         bounded_map.reset()
         self.assertEqual(bounded_map.size, 0)
 
+
 class ChronosRouterBlockUnitTests(unittest.TestCase):
     def test_router_enqueue_becomes_visible_after_1_cycle(self):
         pass
@@ -141,13 +148,15 @@ class ChronosRouterBlockUnitTests(unittest.TestCase):
     def test_router_never_drops_packet(self):
         pass
 
+
 class ChronosNeuronCoreSubblockUnitTests(unittest.TestCase):
     def test_potential_updater_decays_per_cycle_without_input(self):
         initial = Q4_12.from_float(1.0)
         approx_decay_rate = 0.98
         k1, k2 = SecondOrderShiftDecay.find_decay_shifts(approx_decay_rate)
+        spike_threshold = Q4_12.from_float(2.0)
 
-        param = NeuronParameter(k1, k2, 4)
+        param = NeuronParameter(k1, k2, 4, spike_threshold)
         updater = MembranePotentialUpdater(param)
 
         updater.set_membrane_potential(initial)
@@ -160,9 +169,10 @@ class ChronosNeuronCoreSubblockUnitTests(unittest.TestCase):
     def test_potential_updater_increases_potential_at_incoming_spike(self):
         initial = Q4_12.from_float(1.0)
         approx_decay_rate = 0.97
-        k1, k2 = SecondOrderShiftDecay.find_decay_shifts(0.97)
+        k1, k2 = SecondOrderShiftDecay.find_decay_shifts(approx_decay_rate)
+        spike_threshold = Q4_12.from_float(2.0)
 
-        param = NeuronParameter(k1, k2, 4)
+        param = NeuronParameter(k1, k2, 4, spike_threshold)
         updater = MembranePotentialUpdater(param)
 
         synaptic_weight = Q4_12.from_float(0.5)
@@ -175,6 +185,31 @@ class ChronosNeuronCoreSubblockUnitTests(unittest.TestCase):
 
         expected = initial - (initial >> k1) - (initial >> k2) + synaptic_weight
         self.assertEqual(updater.membrane_potential, expected)
+
+    def test_potential_updater_enqueues_outgoing_spike_packet_after_exceeding_threshold_at_next_cycle(
+        self,
+    ):
+        initial = Q4_12.from_float(1.0)
+        spike_threshold = Q4_12.from_float(1.0)
+
+        # Set k1, k2 absurdly high so no decay would occur.
+        param = NeuronParameter(16, 16, 4, spike_threshold)
+        updater = MembranePotentialUpdater(param)
+
+        updater.set_membrane_potential(initial)
+        updater.update()
+        updater.commit()
+
+        # TODO: For now, it only checks the presence of packet.
+        # Whenever a fanout table is introduced, this should check
+        # content equivalence as well.
+        self.assertNotEqual(updater.outgoing_packet, None)
+
+        # Since it's supposed to be fire a spike, the outbound
+        # spike should disappear after a cycle.
+        updater.update()
+        updater.commit()
+        self.assertEqual(updater.outgoing_packet, None)
 
 
 class ChronosNeuronCoreIntegrateTests(unittest.TestCase):

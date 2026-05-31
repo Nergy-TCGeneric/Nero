@@ -1,12 +1,13 @@
 from dataclasses import dataclass
-from chronos.hardware_types import Q4_12, BoundedMap
+from chronos.hardware_types import Q4_12, BoundedMap, EventPacket, UInt
 
 
-@dataclass
+@dataclass(frozen=True)
 class NeuronParameter:
     k1: int
     k2: int
     weight_capacity: int
+    spike_threshold: Q4_12
 
 
 class SecondOrderShiftDecay:
@@ -29,6 +30,7 @@ class SecondOrderShiftDecay:
 
         return (best_k1, best_k2)
 
+
 class MembranePotentialUpdater:
     __membrane_potential: Q4_12
     __next_membrane_potential: Q4_12
@@ -36,17 +38,28 @@ class MembranePotentialUpdater:
     __k1: int
     __k2: int
 
-    __weight_entry : BoundedMap
-    __enqueued_spike_id : int = -1
+    __weight_entry: BoundedMap
+    __enqueued_spike_id: int = -1
+    __spike_threshold: Q4_12
+
+    __outbound_spike_packet: EventPacket | None
+    __next_outbound_spike_packet: EventPacket | None
 
     def __init__(self, param: NeuronParameter):
         self.__k1 = param.k1
         self.__k2 = param.k2
         self.__weight_entry = BoundedMap(param.weight_capacity)
+        self.__spike_threshold = param.spike_threshold
+        self.__outbound_spike_packet = None
+        self.__next_outbound_spike_packet = None
 
     @property
     def membrane_potential(self) -> Q4_12:
         return self.__membrane_potential
+
+    @property
+    def outgoing_packet(self) -> EventPacket | None:
+        return self.__outbound_spike_packet
 
     def enqueue_spike(self, neuron_id: int) -> bool:
         if self.__enqueued_spike_id == -1:
@@ -63,12 +76,13 @@ class MembranePotentialUpdater:
     # This overrides current membrane potential. Use with extra care.
     def set_membrane_potential(self, v: Q4_12):
         self.__membrane_potential = v
-    
+
     def reset(self):
         self.__membrane_potential = Q4_12(0)
         self.__next_membrane_potential = Q4_12(0)
 
     def update(self):
+        self.__next_outbound_spike_packet = None
         decayed = (
             self.__membrane_potential
             - (self.__membrane_potential >> self.__k1)
@@ -80,22 +94,30 @@ class MembranePotentialUpdater:
             _, weight_addition = self.__weight_entry.get(self.__enqueued_spike_id)
             self.__enqueued_spike_id = -1
 
-        self.__next_membrane_potential = decayed + weight_addition
+        # TODO: Need spike fanout table later.
+        summed = decayed + weight_addition
+        if summed >= self.__spike_threshold:
+            self.__next_membrane_potential = Q4_12(0)
+            self.__next_outbound_spike_packet = EventPacket(UInt(5, 0), UInt(16, 0))
+        else:
+            self.__next_membrane_potential = decayed + weight_addition
 
     def commit(self):
         self.__membrane_potential = self.__next_membrane_potential
+        self.__outbound_spike_packet = self.__next_outbound_spike_packet
+
 
 class NeuronCore:
-    __potential_updater : MembranePotentialUpdater
+    __potential_updater: MembranePotentialUpdater
 
     def __init__(self, param: NeuronParameter):
-        __potential_updater = SecondOrderPotentialDecayer(param)
+        self.__potential_updater = MembranePotentialUpdater(param)
 
     def reset(self):
-        __potential_updater.reset()
+        self.__potential_updater.reset()
 
     def update(self):
-        __potential_updater.update()
+        self.__potential_updater.update()
 
     def commit(self):
-        __potential_updater.commit()
+        self.__potential_updater.commit()
