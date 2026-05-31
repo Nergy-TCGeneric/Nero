@@ -74,6 +74,70 @@ class ChronosQ4_12UnitTests(unittest.TestCase):
         self.assertEqual(q1 + q2, expected)
 
 
+class ChronosUIntUnitTests(unittest.TestCase):
+    def test_non_positive_width_uint_is_invalid(self):
+        with self.assertRaises(ValueError):
+            UInt(0)
+        with self.assertRaises(ValueError):
+            UInt(-1)
+
+    def test_uint_addition_works_as_expected(self):
+        u1 = UInt(4, 1)
+        u2 = UInt(4, 2)
+        expected = UInt(4, 3)
+
+        self.assertEqual(u1 + u2, expected)
+
+    def test_uint_addition_fails_with_different_widths(self):
+        u1 = UInt(2, 1)
+        u2 = UInt(3, 1)
+
+        with self.assertRaises(ValueError):
+            _ = u1 + u2
+
+    def test_uint_subtraction_works_as_expected(self):
+        u1 = UInt(4, 5)
+        u2 = UInt(4, 4)
+        expected = UInt(4, 1)
+
+        self.assertEqual(u1 - u2, expected)
+
+    def test_uint_subtraction_fails_with_different_widths(self):
+        u1 = UInt(2, 1)
+        u2 = UInt(3, 1)
+
+        with self.assertRaises(ValueError):
+            _ = u1 - u2
+
+    def test_uint_wraps_as_expected_on_addition(self):
+        u1 = UInt(4, 15)
+        u2 = UInt(4, 2)
+        expected = UInt(4, 1)
+
+        self.assertEqual(u1 + u2, expected)
+
+    def test_uint_wraps_as_expected_on_addition_with_longer_bits(self):
+        u1 = UInt(64, 18446744073709551615)
+        u2 = UInt(64, 2)
+        expected = UInt(64, 1)
+
+        self.assertEqual(u1 + u2, expected)
+
+    def test_uint_wraps_as_expected_on_subtraction(self):
+        u1 = UInt(4, 0)
+        u2 = UInt(4, 1)
+        expected = UInt(4, 15)
+
+        self.assertEqual(u1 - u2, expected)
+
+    def test_uint_wraps_as_expected_on_subtraction_with_longer_bits(self):
+        u1 = UInt(64, 0)
+        u2 = UInt(64, 1)
+        expected = UInt(64, 18446744073709551615)
+
+        self.assertEqual(u1 - u2, expected)
+
+
 class ChronosBoundedMapUnitTests(unittest.TestCase):
     def test_map_returns_false_when_queried_non_existent_value(self):
         bounded_map = BoundedMap(4)

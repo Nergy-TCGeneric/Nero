@@ -62,36 +62,50 @@ class Q4_12:
 
 
 # N-bit unsigned int in hardware.
+@dataclass(frozen=True, slots=True)
 class UInt:
-    __width: int
-    __raw: int
+    width: int
+    raw: int = 0
 
-    def __init__(self, width: int, raw: int = 0):
-        assert width > 0
-        self.__width = width
-        self.__raw = raw & self.__mask()
+    def __post_init__(self):
+        if self.width <= 0:
+            raise ValueError("UInt width must be positive.")
+        object.__setattr__(self, "raw", self.raw & self.mask)
 
     @property
     def value(self) -> int:
-        return self.__raw
+        return self.raw
 
-    def __mask(self) -> int:
-        return (1 << self.__width) - 1
+    @property
+    def mask(self) -> int:
+        return (1 << self.width) - 1
 
-    def __add__(self, other):
-        return UInt(self.value + other.value)
+    # Any arithmetic operations must be done with identical width.
+    # This is to ensure no stupid mistake, with an inconveneient tradeoff.
+    @staticmethod
+    def __check_width_equivalence(this: "UInt", other: "UInt") -> None:
+        if this.width != other.width:
+            raise ValueError(
+                f"UInt bit width does not match, got {this.width} and {other.width} bits."
+            )
 
-    def __sub__(self, other):
-        return UInt(self.value - other.value)
+    def __add__(self, other: "UInt") -> "UInt":
+        UInt.__check_width_equivalence(self, other)
+        return UInt(self.width, self.value + other.value)
+
+    def __sub__(self, other: "UInt") -> "UInt":
+        UInt.__check_width_equivalence(self, other)
+        return UInt(self.width, self.value - other.value)
 
     def __eq__(self, other):
         return isinstance(other, UInt) and self.value == other.value
 
     def __str__(self) -> str:
-        return f"{self.value}<{self.__width}>"
+        return f"{self.value}<{self.width}>"
 
     def __repr__(self) -> str:
         return str(self)
+
 
 class BoundedMap:
     __capacity: int
