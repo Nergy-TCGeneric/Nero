@@ -28,8 +28,7 @@ class SecondOrderShiftDecay:
 
         return (best_k1, best_k2)
 
-
-class NeuronCore:
+class MembranePotentialUpdater:
     __membrane_potential: Q4_12
     __next_membrane_potential: Q4_12
 
@@ -39,7 +38,6 @@ class NeuronCore:
     def __init__(self, param: NeuronParameter):
         self.__k1 = param.k1
         self.__k2 = param.k2
-        self.reset()
 
     @property
     def membrane_potential(self) -> Q4_12:
@@ -62,3 +60,19 @@ class NeuronCore:
 
     def commit(self):
         self.__membrane_potential = self.__next_membrane_potential
+
+
+class NeuronCore:
+    __potential_updater : MembranePotentialUpdater
+
+    def __init__(self, param: NeuronParameter):
+        __potential_updater = SecondOrderPotentialDecayer(param)
+
+    def reset(self):
+        __potential_updater.reset()
+
+    def update(self):
+        __potential_updater.update()
+
+    def commit(self):
+        __potential_updater.commit()

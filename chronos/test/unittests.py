@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent.parent / "src"))
 
-from chronos.blocks import NeuronParameter, NeuronCore, SecondOrderShiftDecay
+from chronos.blocks import NeuronParameter, NeuronCore, SecondOrderShiftDecay, MembranePotentialUpdater
 from chronos.hardware_types import Q4_12
 
 class ChronosHardwareTypeUnitTests(unittest.TestCase):
@@ -96,22 +96,26 @@ class ChronosRouterBlockUnitTests(unittest.TestCase):
     def test_router_never_drops_packet(self):
         pass
 
-
-class ChronosCoreBlockUnitTests(unittest.TestCase):
-    def test_core_decays_membrane_potential_per_cycle(self):
+class ChronosNeuronCoreSubblockUnitTests(unittest.TestCase):
+    def test_potential_updater_decays_per_cycle_without_input(self):
         initial = Q4_12.from_float(1.0)
         approx_decay_rate = 0.98
         k1, k2 = SecondOrderShiftDecay.find_decay_shifts(approx_decay_rate)
 
         param = NeuronParameter(k1, k2)
-        core = NeuronCore(param)
+        updater = MembranePotentialUpdater(param)
 
-        core.set_membrane_potential(initial)
-        core.update()
-        core.commit()
+        updater.set_membrane_potential(initial)
+        updater.update()
+        updater.commit()
 
         expected = initial - (initial >> k1) - (initial >> k2)
-        self.assertEqual(core.membrane_potential, expected)
+        self.assertEqual(updater.membrane_potential, expected)
+
+
+class ChronosNeuronCoreIntegrateTests(unittest.TestCase):
+    def test_core_decays_membrane_potential_per_cycle(self):
+        pass
 
     def test_core_adds_synaptic_weight_to_potential_after_receiving_spike(self):
         pass
