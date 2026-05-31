@@ -6,9 +6,9 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent / "src"))
 
 from chronos.blocks import NeuronParameter, NeuronCore, SecondOrderShiftDecay, MembranePotentialUpdater
-from chronos.hardware_types import Q4_12
+from chronos.hardware_types import Q4_12, BoundedMap
 
-class ChronosHardwareTypeUnitTests(unittest.TestCase):
+class ChronosQ4_12UnitTests(unittest.TestCase):
     def test_q4_12_integer_part_addition_works_as_expected(self):
         q1 = Q4_12.from_float(1.0)
         q2 = Q4_12.from_float(3.0)
@@ -68,6 +68,51 @@ class ChronosHardwareTypeUnitTests(unittest.TestCase):
         expected = Q4_12.from_float(0)
         self.assertEqual(q1 + q2, expected)
 
+class ChronosBoundedMapUnitTests(unittest.TestCase):
+    def test_map_returns_false_when_queried_non_existent_value(self):
+        bounded_map = BoundedMap(4)
+        is_valid, data = bounded_map.get(0)
+        self.assertFalse(is_valid)
+
+    def test_map_returns_true_when_queried_existent_value(self):
+        bounded_map = BoundedMap(4)
+        expected_data = Q4_12(1)
+        bounded_map.put(0, expected_data)
+        is_valid, data = bounded_map.get(0)
+
+        self.assertTrue(is_valid)
+        self.assertEqual(data, expected_data)
+
+    def test_map_returns_false_on_put_when_map_is_full(self):
+        bounded_map = BoundedMap(1)
+        bounded_map.put(0, Q4_12(1))
+        is_valid = bounded_map.put(1, Q4_12(1))
+
+        self.assertFalse(is_valid)
+
+    def test_map_returns_true_on_put_when_map_is_not_full(self):
+        bounded_map = BoundedMap(1)
+        is_valid = bounded_map.put(0, Q4_12(1))
+
+        self.assertTrue(is_valid)
+
+    # Overwriting is an intended feature, as hardware doesn't do anything
+    # on overwrites. However this can lead to logic bug, so one should
+    # call put() cautiously.
+    def test_map_returns_true_on_overwriting_put(self):
+        bounded_map = BoundedMap(2)
+        bounded_map.put(0, Q4_12(1))
+        is_valid = bounded_map.put(0, Q4_12(1))
+
+        self.assertTrue(is_valid)
+
+    def test_map_returns_0_size_when_reset(self):
+        bounded_map = BoundedMap(2)
+        bounded_map.put(0, Q4_12(1))
+
+        self.assertEqual(bounded_map.size, 1)
+        bounded_map.reset()
+        self.assertEqual(bounded_map.size, 0)
 
 class ChronosRouterBlockUnitTests(unittest.TestCase):
     def test_router_enqueue_becomes_visible_after_1_cycle(self):
@@ -102,7 +147,7 @@ class ChronosNeuronCoreSubblockUnitTests(unittest.TestCase):
         approx_decay_rate = 0.98
         k1, k2 = SecondOrderShiftDecay.find_decay_shifts(approx_decay_rate)
 
-        param = NeuronParameter(k1, k2)
+        param = NeuronParameter(k1, k2, 4)
         updater = MembranePotentialUpdater(param)
 
         updater.set_membrane_potential(initial)
@@ -110,6 +155,25 @@ class ChronosNeuronCoreSubblockUnitTests(unittest.TestCase):
         updater.commit()
 
         expected = initial - (initial >> k1) - (initial >> k2)
+        self.assertEqual(updater.membrane_potential, expected)
+
+    def test_potential_updater_increases_potential_at_incoming_spike(self):
+        initial = Q4_12.from_float(1.0)
+        approx_decay_rate = 0.97
+        k1, k2 = SecondOrderShiftDecay.find_decay_shifts(0.97)
+
+        param = NeuronParameter(k1, k2, 4)
+        updater = MembranePotentialUpdater(param)
+
+        synaptic_weight = Q4_12.from_float(0.5)
+        updater.set_membrane_potential(initial)
+        updater.add_synaptic_weight_entry(0, synaptic_weight)
+        updater.enqueue_spike(0)
+
+        updater.update()
+        updater.commit()
+
+        expected = initial - (initial >> k1) - (initial >> k2) + synaptic_weight
         self.assertEqual(updater.membrane_potential, expected)
 
 

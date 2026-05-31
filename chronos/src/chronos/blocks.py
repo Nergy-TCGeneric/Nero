@@ -1,11 +1,12 @@
 from dataclasses import dataclass
-from chronos.hardware_types import Q4_12
+from chronos.hardware_types import Q4_12, BoundedMap
 
 
 @dataclass
 class NeuronParameter:
     k1: int
     k2: int
+    weight_capacity: int
 
 
 class SecondOrderShiftDecay:
@@ -35,32 +36,54 @@ class MembranePotentialUpdater:
     __k1: int
     __k2: int
 
+    __weight_entry : BoundedMap
+    __enqueued_spike_id : int = -1
+
     def __init__(self, param: NeuronParameter):
         self.__k1 = param.k1
         self.__k2 = param.k2
+        self.__weight_entry = BoundedMap(param.weight_capacity)
 
     @property
     def membrane_potential(self) -> Q4_12:
         return self.__membrane_potential
 
+    def enqueue_spike(self, neuron_id: int) -> bool:
+        if self.__enqueued_spike_id == -1:
+            self.__enqueued_spike_id = neuron_id
+            return True
+        return False
+
+    def add_synaptic_weight_entry(self, neuron_id: int, weight: Q4_12) -> bool:
+        return self.__weight_entry.put(neuron_id, weight)
+
+    def clear_synaptic_weight_entries(self):
+        self.__weight_entry.reset()
+
     # This overrides current membrane potential. Use with extra care.
     def set_membrane_potential(self, v: Q4_12):
         self.__membrane_potential = v
-
+    
     def reset(self):
         self.__membrane_potential = Q4_12(0)
         self.__next_membrane_potential = Q4_12(0)
 
     def update(self):
-        self.__next_membrane_potential = (
+        decayed = (
             self.__membrane_potential
             - (self.__membrane_potential >> self.__k1)
             - (self.__membrane_potential >> self.__k2)
         )
 
+        weight_addition = Q4_12(0)
+        if self.__enqueued_spike_id != -1:
+            _, weight_addition = self.__weight_entry.get(self.__enqueued_spike_id)
+            self.__enqueued_spike_id = -1
+
+        self.__next_membrane_potential = decayed + weight_addition
+
     def commit(self):
         self.__membrane_potential = self.__next_membrane_potential
-
 
 class NeuronCore:
     __potential_updater : MembranePotentialUpdater
