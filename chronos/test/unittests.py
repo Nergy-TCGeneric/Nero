@@ -8,6 +8,66 @@ sys.path.append(str(Path(__file__).parent.parent / "src"))
 from chronos.blocks import NeuronParameter, NeuronCore, SecondOrderShiftDecay
 from chronos.hardware_types import Q4_12
 
+class ChronosHardwareTypeUnitTests(unittest.TestCase):
+    def test_q4_12_integer_part_addition_works_as_expected(self):
+        q1 = Q4_12.from_float(1.0)
+        q2 = Q4_12.from_float(3.0)
+
+        expected = Q4_12.from_float(4.0)
+        self.assertEqual(q1 + q2, expected)
+
+    def test_q4_12_integer_part_addition_with_negative_works_as_expected(self):
+        q1 = Q4_12.from_float(1.0)
+        q2 = Q4_12.from_float(-3.0)
+
+        expected = Q4_12.from_float(-2.0)
+        self.assertEqual(q1 + q2, expected)
+
+    def test_q4_12_fraction_part_addition_works_as_expected(self):
+        q1 = Q4_12.from_float(0.75)
+        q2 = Q4_12.from_float(0.5)
+        
+        expected = Q4_12.from_float(1.25)
+        self.assertEqual(q1 + q2, expected)
+
+    def test_q4_12_fraction_part_addition_with_negative__works_as_expected(self):
+        q1 = Q4_12.from_float(-0.75)
+        q2 = Q4_12.from_float(0.5)
+        
+        expected = Q4_12.from_float(-0.25)
+        self.assertEqual(q1 + q2, expected)
+
+    def test_q4_12_integer_part_subtraction_works_as_expected(self):
+        q1 = Q4_12.from_float(2.0)
+        q2 = Q4_12.from_float(1.0)
+
+        expected = Q4_12.from_float(1.0)
+        self.assertEqual(q1 - q2, expected)
+
+    def test_q4_12_fracation_part_subtraction_works_as_expected(self):
+        q1 = Q4_12.from_float(0.5)
+        q2 = Q4_12.from_float(0.125)
+
+        expected = Q4_12.from_float(0.375)
+        self.assertEqual(q1 - q2, expected)
+
+    def test_q4_12_wraps_at_positive_max(self):
+        # A maximum positive value for Q4.12, 0x7FFF
+        q1 = Q4_12.from_float(7.999755859375)
+        # A resolution of Q4.12
+        q2 = Q4_12.from_float(0.000244140625)
+
+        expected = Q4_12.from_float(-8)
+        self.assertEqual(q1 + q2, expected)
+
+    def test_q4_12_wraps_at_negative_min(self):
+        # A minimum negative value for Q4.12, 0xFFFF
+        q1 = Q4_12.from_float(-0.000244140625)
+        q2 = Q4_12.from_float(0.000244140625)
+
+        expected = Q4_12.from_float(0)
+        self.assertEqual(q1 + q2, expected)
+
 
 class ChronosRouterBlockUnitTests(unittest.TestCase):
     def test_router_enqueue_becomes_visible_after_1_cycle(self):
