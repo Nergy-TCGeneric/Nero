@@ -107,38 +107,6 @@ class UInt:
         return str(self)
 
 
-class BoundedMap:
-    __capacity: int
-    __items: dict[int, Q4_12]  # neuron id -> weight
-
-    def __init__(self, capacity=4):
-        assert capacity > 0
-        self.__capacity = capacity
-        self.__items = {}
-
-    @property
-    def size(self) -> int:
-        return len(self.__items)
-
-    @property
-    def capacity(self) -> int:
-        return self.__capacity
-
-    def put(self, neuron_id: int, weight: Q4_12) -> bool:
-        if self.size >= self.__capacity:
-            return False
-        self.__items[neuron_id] = weight
-        return True
-
-    def get(self, neuron_id: int) -> tuple[bool, Q4_12 | None]:
-        if neuron_id not in self.__items:
-            return (False, None)
-        return (True, self.__items[neuron_id])
-
-    def reset(self):
-        self.__items = {}
-
-
 @dataclass(frozen=True)
 class ResponsePacket:
     payload_valid: bool = False

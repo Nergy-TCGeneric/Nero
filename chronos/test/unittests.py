@@ -6,11 +6,13 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent / "src"))
 
 from chronos.blocks import (
+    BoundedRAM,
     NeuronParameter,
     SecondOrderShiftDecay,
     MembranePotentialUpdater,
+    BoundedMap,
 )
-from chronos.hardware_types import Q4_12, UInt, BoundedMap
+from chronos.hardware_types import Q4_12, UInt
 
 
 class ChronosQ4_12UnitTests(unittest.TestCase):
@@ -138,6 +140,109 @@ class ChronosUIntUnitTests(unittest.TestCase):
         self.assertEqual(u1 - u2, expected)
 
 
+class ChronosBoundedRAMUnitTests(unittest.TestCase):
+    def test_ram_raises_an_exception_if_data_width_differs(self):
+        ram = BoundedRAM(4)
+
+        with self.assertRaises(ValueError):
+            ram.put(0, UInt(2))
+
+    def test_ram_raises_an_exception_if_capacity_is_not_positive(self):
+        with self.assertRaises(ValueError):
+            BoundedRAM(4, 0)
+        with self.assertRaises(ValueError):
+            BoundedRAM(4, -1)
+
+    def test_ram_raises_an_exception_on_out_of_bounds_access_on_put(self):
+        ram = BoundedRAM(4, 1)
+
+        with self.assertRaises(ValueError):
+            ram.put(2, UInt(4))
+
+    def test_ram_raises_an_exception_on_out_of_bounds_access_on_get(self):
+        ram = BoundedRAM(4, 1)
+
+        with self.assertRaises(ValueError):
+            ram.get(2)
+
+    def test_ram_put_transaction_works_as_write_first_principle(self):
+        ram = BoundedRAM(4)
+
+        expected = UInt(4, 12)
+        addr = 0
+
+        ram.put(addr, expected)
+        ram.update()
+        ram.commit()
+
+        # Memory is Write-first (or transparent-write),
+        # so whenever write succeed, the output should be visible right away.
+        self.assertEqual(expected, ram.output)
+
+    def test_ram_put_overwrite_is_allowed(self):
+        ram = BoundedRAM(4)
+
+        initial_expected = UInt(4, 7)
+        addr = 0
+
+        ram.put(addr, initial_expected)
+        ram.update()
+        ram.commit()
+
+        self.assertEqual(initial_expected, ram.output)
+
+        overwritten_expected = UInt(4, 1)
+        ram.put(addr, overwritten_expected)
+        ram.update()
+        ram.commit()
+
+        self.assertEqual(overwritten_expected, ram.output)
+
+    def test_ram_get_transaction_works_as_expected(self):
+        ram = BoundedRAM(4)
+
+        expected = UInt(4, 12)
+        expected_2 = UInt(4, 7)
+        addr = 0
+
+        ram.put(addr, expected)
+        ram.update()
+        ram.commit()
+
+        ram.put(addr + 1, expected_2)
+        ram.update()
+        ram.commit()
+
+        ram.get(addr)
+        ram.update()
+        ram.commit()
+
+        self.assertEqual(expected, ram.output)
+
+        ram.get(addr + 1)
+        ram.update()
+        ram.commit()
+
+        self.assertEqual(expected_2, ram.output)
+
+    def test_last_request_to_ram_survives(self):
+        ram = BoundedRAM(4)
+
+        expected = UInt(4, 1)
+        addr = 0
+
+        ram.put(addr, UInt(4, 5))
+        ram.put(addr, UInt(4, 7))
+        ram.put(addr, expected)
+
+        ram.update()
+        ram.commit()
+
+        self.assertEqual(expected, ram.output)
+
+
+# TODO: Need to use update() and commit() API later as BoundedMap
+# is now becoming a part of sequential block.
 class ChronosBoundedMapUnitTests(unittest.TestCase):
     def test_map_returns_false_when_queried_non_existent_value(self):
         bounded_map = BoundedMap(4)
@@ -183,6 +288,26 @@ class ChronosBoundedMapUnitTests(unittest.TestCase):
         self.assertEqual(bounded_map.size, 1)
         bounded_map.reset()
         self.assertEqual(bounded_map.size, 0)
+
+
+class ChronosBoundedQueueUnitTests(unittest.TestCase):
+    def test_queue_rejects_non_positive_depth(self):
+        pass
+
+    def test_queue_rejects_incoming_data_with_different_bitwidth(self):
+        pass
+
+    def test_enqueue_operation_increases_queue_element_count(self):
+        pass
+
+    def test_enqueue_return_failure_if_queue_is_full(self):
+        pass
+
+    def test_dequeue_operation_decreases_queue_element_count(self):
+        pass
+
+    def test_dequeue_return_failiure_if_queue_is_empty(self):
+        pass
 
 
 class ChronosRouterBlockUnitTests(unittest.TestCase):
