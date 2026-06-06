@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
+from enum import Enum
 from chronos.hardware_types import Q4_12, EventPacket, UInt
 
 
@@ -45,6 +46,7 @@ class BoundedRAM(SequentialModule):
             UInt(bit_width) for _ in range(capacity)
         ]  # TODO: Initialize with random UInt later
         self.__should_put_next_cycle = False
+        self.__next_address = 0
 
     @property
     def capacity(self) -> int:
@@ -104,15 +106,17 @@ class BoundedRAM(SequentialModule):
 
 
 # TODO: Can be implemented with BoundedRAM later.
-# TODO: Can be implemented with BoundedRAM later.
-class BoundedMap(SequentialModule):
+class BoundedQueue:
     __capacity: int
-    __items: dict[int, Q4_12]  # neuron id -> weight
+    __items: list[UInt]
 
     def __init__(self, capacity=4):
-        assert capacity > 0
+        if capacity <= 0:
+            raise ValueError(
+                f"Only non-negative capacity is valid for queue, but got : {capacity}"
+            )
         self.__capacity = capacity
-        self.__items = {}
+        self.__items = []
 
     @property
     def size(self) -> int:
@@ -122,25 +126,28 @@ class BoundedMap(SequentialModule):
     def capacity(self) -> int:
         return self.__capacity
 
-    def put(self, neuron_id: int, weight: Q4_12) -> bool:
-        if self.size >= self.__capacity:
+    def __ensure_identical_bit_width(self):
+        if len(self.__items) == 0:
+            return
+
+        bit_width = self.__items[0].width
+        for uint in self.__items:
+            if bit_width != uint.width:
+                raise ValueError(
+                    f"UInt bit widths are different, expected {bit_width} but found {uint.width}."
+                )
+
+    def push(self, data: UInt) -> bool:
+        self.__ensure_identical_bit_width()
+        if self.size >= self.capacity:
             return False
-        self.__items[neuron_id] = weight
+        self.__items.append(data)
         return True
 
-    def get(self, neuron_id: int) -> tuple[bool, Q4_12 | None]:
-        if neuron_id not in self.__items:
+    def pop(self) -> tuple[bool, UInt | None]:
+        if self.size == 0:
             return (False, None)
-        return (True, self.__items[neuron_id])
-
-    def reset(self):
-        self.__items = {}
-
-    def update(self):
-        pass
-
-    def commit(self):
-        pass
+        return (True, self.__items.pop())
 
 
 @dataclass(frozen=True)
@@ -173,28 +180,36 @@ class SecondOrderShiftDecay:
 
 
 class MembranePotentialUpdater(SequentialModule):
+    class _States(Enum):
+        DECAY = 0
+        SPIKE_RECEIVED = 1
+
     __membrane_potential: Q4_12
     __next_membrane_potential: Q4_12
 
     __k1: int
     __k2: int
 
-    __weight_entry: BoundedMap
-    __enqueued_spike_id: int = -1
+    __weight_entry: BoundedRAM
+    __enqueued_spike_id: int
     __spike_threshold: Q4_12
 
-    __fanout_table: list[UInt]
+    __state: _States
+    __next_state: _States
+
     __outbound_spike_packet: EventPacket | None
     __next_outbound_spike_packet: EventPacket | None
 
     def __init__(self, param: NeuronParameter):
         self.__k1 = param.k1
         self.__k2 = param.k2
-        self.__weight_entry = BoundedMap(param.weight_capacity)
+        self.__weight_entry = BoundedRAM(Q4_12.WIDTH, param.weight_capacity)
         self.__spike_threshold = param.spike_threshold
         self.__outbound_spike_packet = None
         self.__next_outbound_spike_packet = None
-        self.__fanout_table = []
+        self.__enqueued_spike_id = -1
+
+        self.reset()
 
     @property
     def membrane_potential(self) -> Q4_12:
@@ -210,8 +225,8 @@ class MembranePotentialUpdater(SequentialModule):
             return True
         return False
 
-    def add_synaptic_weight_entry(self, neuron_id: int, weight: Q4_12) -> bool:
-        return self.__weight_entry.put(neuron_id, weight)
+    def add_synaptic_weight_entry(self, neuron_id: int, weight: Q4_12):
+        self.__weight_entry.put(neuron_id, weight.to_uint())
 
     def clear_synaptic_weight_entries(self):
         self.__weight_entry.reset()
@@ -221,21 +236,29 @@ class MembranePotentialUpdater(SequentialModule):
         self.__membrane_potential = v
 
     def reset(self):
+        self.__state = MembranePotentialUpdater._States.DECAY
+        self.__next_state = MembranePotentialUpdater._States.DECAY
         self.__membrane_potential = Q4_12(0)
         self.__next_membrane_potential = Q4_12(0)
 
+        self.clear_synaptic_weight_entries()
+
     def update(self):
-        self.__next_outbound_spike_packet = None
         decayed = (
             self.__membrane_potential
             - (self.__membrane_potential >> self.__k1)
             - (self.__membrane_potential >> self.__k2)
         )
 
-        weight_addition = Q4_12(0)
         if self.__enqueued_spike_id != -1:
-            _, weight_addition = self.__weight_entry.get(self.__enqueued_spike_id)
-            self.__enqueued_spike_id = -1
+            self.__weight_entry.get(self.__enqueued_spike_id)
+            self.__next_state = MembranePotentialUpdater._States.SPIKE_RECEIVED
+        else:
+            self.__next_state = MembranePotentialUpdater._States.DECAY
+
+        weight_addition = Q4_12(0)
+        if self.__state == MembranePotentialUpdater._States.SPIKE_RECEIVED:
+            weight_addition = Q4_12.from_uint(self.__weight_entry.output)
 
         # TODO: Need spike fanout table later.
         summed = decayed + weight_addition
@@ -244,10 +267,17 @@ class MembranePotentialUpdater(SequentialModule):
             self.__next_outbound_spike_packet = EventPacket(UInt(5, 0), UInt(16, 0))
         else:
             self.__next_membrane_potential = decayed + weight_addition
+            self.__next_outbound_spike_packet = None
+
+        self.__weight_entry.update()
 
     def commit(self):
         self.__membrane_potential = self.__next_membrane_potential
         self.__outbound_spike_packet = self.__next_outbound_spike_packet
+        self.__state = self.__next_state
+        self.__enqueued_spike_id = -1
+
+        self.__weight_entry.commit()
 
 
 class NeuronCore(SequentialModule):
@@ -264,35 +294,3 @@ class NeuronCore(SequentialModule):
 
     def commit(self):
         self.__potential_updater.commit()
-# TODO: Can be implemented with BoundedRAM later.
-class BoundedMap:
-    __capacity: int
-    __items: dict[int, Q4_12]  # neuron id -> weight
-
-    def __init__(self, capacity=4):
-        assert capacity > 0
-        self.__capacity = capacity
-        self.__items = {}
-
-    @property
-    def size(self) -> int:
-        return len(self.__items)
-
-    @property
-    def capacity(self) -> int:
-        return self.__capacity
-
-    def put(self, neuron_id: int, weight: Q4_12) -> bool:
-        if self.size >= self.__capacity:
-            return False
-        self.__items[neuron_id] = weight
-        return True
-
-    def get(self, neuron_id: int) -> tuple[bool, Q4_12 | None]:
-        if neuron_id not in self.__items:
-            return (False, None)
-        return (True, self.__items[neuron_id])
-
-    def reset(self):
-        self.__items = {}
-

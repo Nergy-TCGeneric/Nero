@@ -10,7 +10,6 @@ from chronos.blocks import (
     NeuronParameter,
     SecondOrderShiftDecay,
     MembranePotentialUpdater,
-    BoundedMap,
 )
 from chronos.hardware_types import Q4_12, UInt
 
@@ -241,55 +240,6 @@ class ChronosBoundedRAMUnitTests(unittest.TestCase):
         self.assertEqual(expected, ram.output)
 
 
-# TODO: Need to use update() and commit() API later as BoundedMap
-# is now becoming a part of sequential block.
-class ChronosBoundedMapUnitTests(unittest.TestCase):
-    def test_map_returns_false_when_queried_non_existent_value(self):
-        bounded_map = BoundedMap(4)
-        is_valid, _ = bounded_map.get(0)
-        self.assertFalse(is_valid)
-
-    def test_map_returns_true_when_queried_existent_value(self):
-        bounded_map = BoundedMap(4)
-        expected_data = Q4_12(1)
-        bounded_map.put(0, expected_data)
-        is_valid, data = bounded_map.get(0)
-
-        self.assertTrue(is_valid)
-        self.assertEqual(data, expected_data)
-
-    def test_map_returns_false_on_put_when_map_is_full(self):
-        bounded_map = BoundedMap(1)
-        bounded_map.put(0, Q4_12(1))
-        is_valid = bounded_map.put(1, Q4_12(1))
-
-        self.assertFalse(is_valid)
-
-    def test_map_returns_true_on_put_when_map_is_not_full(self):
-        bounded_map = BoundedMap(1)
-        is_valid = bounded_map.put(0, Q4_12(1))
-
-        self.assertTrue(is_valid)
-
-    # Overwriting is an intended feature, as hardware doesn't do anything
-    # on overwrites. However this can lead to logic bug, so one should
-    # call put() cautiously.
-    def test_map_returns_true_on_overwriting_put(self):
-        bounded_map = BoundedMap(2)
-        bounded_map.put(0, Q4_12(1))
-        is_valid = bounded_map.put(0, Q4_12(1))
-
-        self.assertTrue(is_valid)
-
-    def test_map_returns_0_size_when_reset(self):
-        bounded_map = BoundedMap(2)
-        bounded_map.put(0, Q4_12(1))
-
-        self.assertEqual(bounded_map.size, 1)
-        bounded_map.reset()
-        self.assertEqual(bounded_map.size, 0)
-
-
 class ChronosBoundedQueueUnitTests(unittest.TestCase):
     def test_queue_rejects_non_positive_depth(self):
         pass
@@ -347,6 +297,7 @@ class ChronosNeuronCoreSubblockUnitTests(unittest.TestCase):
 
         param = NeuronParameter(k1, k2, 4, spike_threshold)
         updater = MembranePotentialUpdater(param)
+        updater.reset()
 
         updater.set_membrane_potential(initial)
         updater.update()
@@ -363,17 +314,35 @@ class ChronosNeuronCoreSubblockUnitTests(unittest.TestCase):
 
         param = NeuronParameter(k1, k2, 4, spike_threshold)
         updater = MembranePotentialUpdater(param)
+        updater.reset()
 
+        # Cycle 0: Adding synaptic weight.
         synaptic_weight = Q4_12.from_float(0.5)
-        updater.set_membrane_potential(initial)
         updater.add_synaptic_weight_entry(0, synaptic_weight)
-        updater.enqueue_spike(0)
-
         updater.update()
         updater.commit()
 
-        expected = initial - (initial >> k1) - (initial >> k2) + synaptic_weight
-        self.assertEqual(updater.membrane_potential, expected)
+        # Cycle 1: Inject an incoming spike, with weight = 0.5
+        updater.set_membrane_potential(initial)
+        updater.enqueue_spike(0)
+        updater.update()
+        updater.commit()
+
+        # Check if potential was decayed as expected first.
+        first_expected = initial - (initial >> k1) - (initial >> k2)
+        self.assertEqual(updater.membrane_potential, first_expected)
+
+        # Cycle 2:  Observe if synaptic weight was added as expected.
+        updater.update()
+        updater.commit()
+
+        last_expected = (
+            first_expected
+            - (first_expected >> k1)
+            - (first_expected >> k2)
+            + synaptic_weight
+        )
+        self.assertEqual(updater.membrane_potential, last_expected)
 
     def test_potential_updater_enqueues_outgoing_spike_packet_after_exceeding_threshold_at_next_cycle(
         self,

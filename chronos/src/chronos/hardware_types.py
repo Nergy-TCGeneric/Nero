@@ -21,11 +21,18 @@ class Q4_12:
     def from_float(cls, x: float):
         return cls(round(x * cls.SCALE))
 
+    @classmethod
+    def from_uint(cls, x: "UInt"):
+        return cls(x.value)
+
     def signed_raw(self) -> int:
         return self.__to_signed(self.raw)
 
     def to_float(self) -> float:
         return self.signed_raw() / self.SCALE
+
+    def to_uint(self) -> "UInt":
+        return UInt(self.WIDTH, self.signed_raw())
 
     def __add__(self, other):
         return Q4_12(self.signed_raw() + other.signed_raw())
