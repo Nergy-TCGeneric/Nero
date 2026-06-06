@@ -1,3 +1,4 @@
+from typing import cast
 import unittest
 
 import sys
@@ -5,13 +6,54 @@ from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent.parent / "src"))
 
+from chronos.utils import BitField
 from chronos.blocks import (
     BoundedRAM,
+    NeuronLocation,
     NeuronParameter,
+    PacketSequencer,
     SecondOrderShiftDecay,
     MembranePotentialUpdater,
 )
-from chronos.hardware_types import Q4_12, UInt
+from chronos.hardware_types import Q4_12, EventPayloadFormat, UInt, Coordinate, Opcode
+
+
+class ChronosUtilUnitTests(unittest.TestCase):
+    def test_bitfield_triggers_an_exception_on_invalid_range(self):
+        with self.assertRaises(ValueError):
+            BitField.mask(-1, 0)
+        with self.assertRaises(ValueError):
+            BitField.mask(1, 0)
+
+    def test_bitfield_creates_proper_bitmask(self):
+        # 1101 1110 1010 1101 1011 1110 1110 1111
+        data = 0xDEADBEEF
+
+        # Single bit
+        self.assertEqual(data & BitField.mask(0, 0), 0x1)
+
+        # 4 bits
+        self.assertEqual(data & BitField.mask(0, 4), 0xF)
+        self.assertEqual((data & BitField.mask(4, 8)) >> 4, 0xE)
+        self.assertEqual((data & BitField.mask(8, 12)) >> 8, 0xE)
+        self.assertEqual((data & BitField.mask(12, 16)) >> 12, 0xB)
+        self.assertEqual((data & BitField.mask(16, 20)) >> 16, 0xD)
+        self.assertEqual((data & BitField.mask(20, 24)) >> 20, 0xA)
+        self.assertEqual((data & BitField.mask(24, 28)) >> 24, 0xE)
+        self.assertEqual((data & BitField.mask(28, 32)) >> 28, 0xD)
+
+        # 8 bits
+        self.assertEqual(data & BitField.mask(0, 8), 0xEF)
+        self.assertEqual((data & BitField.mask(8, 16)) >> 8, 0xBE)
+        self.assertEqual((data & BitField.mask(16, 24)) >> 16, 0xAD)
+        self.assertEqual((data & BitField.mask(24, 32)) >> 24, 0xDE)
+
+        # 16 bits
+        self.assertEqual(data & BitField.mask(0, 16), 0xBEEF)
+        self.assertEqual((data & BitField.mask(16, 32)) >> 16, 0xDEAD)
+
+        # 32 bits
+        self.assertEqual(data & BitField.mask(0, 32), data)
 
 
 class ChronosQ4_12UnitTests(unittest.TestCase):
@@ -366,6 +408,129 @@ class ChronosNeuronCoreSubblockUnitTests(unittest.TestCase):
         updater.update()
         updater.commit()
         self.assertFalse(updater.should_fire_spike)
+
+    def test_packet_sequencer_triggers_overflow_exception_on_adding_entry_when_full(
+        self,
+    ):
+        source_pos = Coordinate(UInt(4, 0), UInt(4, 0))
+        source_local_pos = Coordinate(UInt(1, 0), UInt(1, 0))
+        source_loc = NeuronLocation(source_pos, source_local_pos)
+
+        sequencer = PacketSequencer(1, source_loc)
+
+        first_dest_pos = Coordinate(UInt(4, 0), UInt(4, 1))
+        first_dest_local_pos = Coordinate(UInt(1, 0), UInt(1, 0))
+        first_dest_loc = NeuronLocation(first_dest_pos, first_dest_local_pos)
+
+        sequencer.add_destination_entry(first_dest_loc)
+        sequencer.update()
+        sequencer.commit()
+
+        # Doesn't matter if value duplicates. Point is, this operation
+        # will make buffer overflow.
+        with self.assertRaises(ValueError):
+            sequencer.add_destination_entry(first_dest_loc)
+
+    def test_packet_sequencer_fires_a_packet_after_request_enqueue(self):
+        source_pos = Coordinate(UInt(4, 0), UInt(4, 0))
+        source_local_pos = Coordinate(UInt(1, 0), UInt(1, 0))
+        source_loc = NeuronLocation(source_pos, source_local_pos)
+
+        sequencer = PacketSequencer(2, source_loc)
+
+        first_dest_pos = Coordinate(UInt(4, 0), UInt(4, 1))
+        first_dest_local_pos = Coordinate(UInt(1, 0), UInt(1, 0))
+        first_dest_loc = NeuronLocation(first_dest_pos, first_dest_local_pos)
+
+        sequencer.add_destination_entry(first_dest_loc)
+        sequencer.update()
+        sequencer.commit()
+
+        # Cycle 0 : Enqueue the sequencing request.
+        sequencer.enqueue_sequencing_request()
+        sequencer.update()
+        sequencer.commit()
+
+        self.assertTrue(sequencer.is_busy)
+
+        # Cycle 1 : Iterate through the table.
+        sequencer.update()
+        sequencer.commit()
+
+        packet = sequencer.outgoing_packet
+        self.assertEqual(packet.source, source_pos)
+        self.assertEqual(packet.destination, first_dest_pos)
+        self.assertEqual(packet.source_local, source_local_pos)
+        self.assertEqual(packet.dest_local, first_dest_local_pos)
+        self.assertTrue(isinstance(packet.format, EventPayloadFormat))
+
+        event_packet = cast(EventPayloadFormat, packet.format)
+        self.assertEqual(event_packet.event_type, Opcode.SPIKE)
+
+        sequencer.update()
+        sequencer.commit()
+
+        self.assertFalse(sequencer.is_busy)
+
+    def test_packet_sequencer_fires_packets_one_by_one_in_added_order(self):
+        source_pos = Coordinate(UInt(4, 0), UInt(4, 0))
+        source_local_pos = Coordinate(UInt(1, 0), UInt(1, 0))
+        source_loc = NeuronLocation(source_pos, source_local_pos)
+
+        sequencer = PacketSequencer(2, source_loc)
+
+        first_dest_pos = Coordinate(UInt(4, 0), UInt(4, 1))
+        first_dest_local_pos = Coordinate(UInt(1, 0), UInt(1, 0))
+        first_dest_loc = NeuronLocation(first_dest_pos, first_dest_local_pos)
+
+        sequencer.add_destination_entry(first_dest_loc)
+        sequencer.update()
+        sequencer.commit()
+
+        second_dest_pos = Coordinate(UInt(4, 4), UInt(4, 7))
+        second_dest_local_pos = Coordinate(UInt(1, 1), UInt(1, 0))
+        second_dest_loc = NeuronLocation(second_dest_pos, second_dest_local_pos)
+
+        sequencer.add_destination_entry(second_dest_loc)
+        sequencer.update()
+        sequencer.commit()
+
+        # Cycle 0 : Enqueue the sequencing request.
+        sequencer.enqueue_sequencing_request()
+        sequencer.update()
+        sequencer.commit()
+
+        self.assertTrue(sequencer.is_busy)
+
+        # Cycle 1 : Iterate through the table.
+        sequencer.update()
+        sequencer.commit()
+
+        packet = sequencer.outgoing_packet
+
+        self.assertEqual(packet.source, source_pos)
+        self.assertEqual(packet.destination, first_dest_pos)
+        self.assertEqual(packet.source_local, source_local_pos)
+        self.assertEqual(packet.dest_local, first_dest_local_pos)
+        self.assertTrue(isinstance(packet.format, EventPayloadFormat))
+
+        event_packet = cast(EventPayloadFormat, packet.format)
+        self.assertEqual(event_packet.event_type, Opcode.SPIKE)
+
+        sequencer.update()
+        sequencer.commit()
+
+        self.assertFalse(sequencer.is_busy)
+        packet = sequencer.outgoing_packet
+
+        self.assertEqual(packet.source, source_pos)
+        self.assertEqual(packet.destination, second_dest_pos)
+        self.assertEqual(packet.source_local, source_local_pos)
+        self.assertEqual(packet.dest_local, second_dest_local_pos)
+        self.assertTrue(isinstance(packet.format, EventPayloadFormat))
+
+        event_packet = cast(EventPayloadFormat, packet.format)
+        self.assertEqual(event_packet.event_type, Opcode.SPIKE)
 
 
 class ChronosNeuronCoreIntegrateTests(unittest.TestCase):

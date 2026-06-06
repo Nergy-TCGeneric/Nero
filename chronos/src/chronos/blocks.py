@@ -1,7 +1,15 @@
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
 from enum import Enum
-from chronos.hardware_types import Q4_12, UInt
+from chronos.hardware_types import (
+    Q4_12,
+    Coordinate,
+    EventPayloadFormat,
+    Opcode,
+    Packet,
+    UInt,
+)
+from chronos.utils import BitFieldExtractor
 
 
 class SequentialModule(ABC):
@@ -47,6 +55,7 @@ class BoundedRAM(SequentialModule):
         ]  # TODO: Initialize with random UInt later
         self.__should_put_next_cycle = False
         self.__next_address = 0
+        self.__output = self.__items[self.__next_address]
 
     @property
     def capacity(self) -> int:
@@ -156,6 +165,12 @@ class NeuronParameter:
     k2: int
     weight_capacity: int
     spike_threshold: Q4_12
+
+
+@dataclass(frozen=True)
+class NeuronLocation:
+    position: Coordinate
+    local_position: Coordinate
 
 
 class SecondOrderShiftDecay:
@@ -281,6 +296,149 @@ class MembranePotentialUpdater(SequentialModule):
         self.__enqueued_spike_id = -1
 
         self.__weight_entry.commit()
+
+
+class PacketSequencer(SequentialModule):
+    class _States(Enum):
+        IDLE = 0
+        SEQUENCING = 1
+
+    # Sequential components
+    __memory: BoundedRAM
+
+    # Runtime settings
+    __capacity: int
+    __position: Coordinate
+    __local_position: Coordinate
+
+    # Update-dependent values
+    __next_entry_count: int
+    __entry_count: int
+
+    __next_head: int
+    __head: int
+
+    __next_state: _States
+    __state: _States
+
+    __outgoing_packet: Packet
+
+    # dest_addr_width here is neuron address width + local address width.
+    def __init__(self, capacity: int, loc: NeuronLocation):
+
+        self.__position = loc.position
+        self.__local_position = loc.local_position
+
+        # Since source addr width = dest addr width, we can infer
+        # required bit width here.
+        dest_addr_width = loc.position.width + loc.local_position.width
+        self.__capacity = capacity
+        self.__memory = BoundedRAM(dest_addr_width, capacity)
+        self.reset()
+
+    @property
+    def capacity(self) -> int:
+        return self.__capacity
+
+    @property
+    def size(self) -> int:
+        return self.__entry_count
+
+    @property
+    def is_busy(self) -> bool:
+        return self.__state == PacketSequencer._States.SEQUENCING
+
+    @property
+    def outgoing_packet(self) -> Packet:
+        return self.__outgoing_packet
+
+    def add_destination_entry(self, dest: NeuronLocation):
+        if self.__entry_count >= self.__capacity:
+            raise ValueError(
+                f"Buffer overflow occured: entry count {self.__entry_count} exceeded capacity {self.__capacity}"
+            )
+
+        concated_bit_width = dest.position.width + dest.local_position.width
+        concated = UInt(
+            concated_bit_width,
+            (dest.local_position.to_uint().value << dest.position.width)
+            + dest.position.to_uint().value,
+        )
+
+        self.__memory.put(self.__entry_count, concated)
+        self.__next_entry_count = self.__entry_count + 1
+
+    def enqueue_sequencing_request(self):
+        # TODO: May want to add small counter for pending sequencing requests later.
+        if self.__state == PacketSequencer._States.IDLE:
+            self.__next_state = PacketSequencer._States.SEQUENCING
+            self.__next_head = 0
+        else:
+            # TODO: Stub warning. Later replace this with counter.
+            print("Warning: incoming request was dropped because state wasn't IDLE")
+
+    def update(self):
+        end_of_sequence = self.__head >= self.__entry_count - 1
+
+        # Advance the head, if it's sequencing.
+        if self.__state == PacketSequencer._States.SEQUENCING:
+            self.__memory.get(self.__head)
+            if end_of_sequence:
+                self.__next_head = 0
+                self.__next_state = PacketSequencer._States.IDLE
+            else:
+                self.__next_head = self.__head + 1
+                self.__next_state = PacketSequencer._States.SEQUENCING
+
+        self.__memory.update()
+
+    def commit(self):
+
+        # TODO: Need to precisely define the timings.
+        self.__memory.commit()
+
+        self.__entry_count = self.__next_entry_count
+        self.__head = self.__next_head
+        self.__state = self.__next_state
+
+        # Extracting the coordinate
+        dest_as_uint = self.__memory.output
+        extractor = BitFieldExtractor(dest_as_uint.value, dest_as_uint.width)
+        destination = Coordinate.from_uint(
+            UInt(self.__position.width, extractor.next(self.__position.width)),
+            self.__position.width // 2,
+        )
+        local_dest = Coordinate.from_uint(
+            UInt(
+                self.__local_position.width,
+                extractor.next(self.__local_position.width),
+            ),
+            self.__local_position.width // 2,
+        )
+
+        # According to sNPU Architecture, spike opcode is 5'b00000.
+        # Payload is don't care, so use it as is.
+        event_format = EventPayloadFormat(Opcode.SPIKE)
+
+        # TODO: Timestamp is filled with stub. Add a counter later.
+        self.__outgoing_packet = Packet(
+            self.__position,
+            destination,
+            self.__local_position,
+            local_dest,
+            UInt(8),
+            event_format,
+        )
+
+    def reset(self):
+        self.__next_entry_count = 0
+        self.__entry_count = 0
+        self.__next_head = 0
+        self.__head = 0
+        self.__next_state = PacketSequencer._States.IDLE
+        self.__state = PacketSequencer._States.IDLE
+
+        self.__memory.reset()
 
 
 class NeuronCore(SequentialModule):
