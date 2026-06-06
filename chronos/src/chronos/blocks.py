@@ -1,5 +1,20 @@
 from dataclasses import dataclass
+from abc import ABC, abstractmethod
 from chronos.hardware_types import Q4_12, EventPacket, UInt
+
+
+class SequentialModule(ABC):
+    @abstractmethod
+    def update(self):
+        pass
+
+    @abstractmethod
+    def commit(self):
+        pass
+
+    @abstractmethod
+    def reset(self):
+        pass
 
 
 # This is a simple dual-port, write-first memory.
@@ -7,7 +22,7 @@ from chronos.hardware_types import Q4_12, EventPacket, UInt
 # the memory returns a new 'written' data.
 #
 # Refer: AMD Xilinx UG473, 7 Series FPGAs Memory Resources User Guide
-class BoundedRAM:
+class BoundedRAM(SequentialModule):
     __capacity: int
     __bit_width: int
     __items: list[UInt]
@@ -83,9 +98,14 @@ class BoundedRAM:
             self.__items[self.__next_address] = self.__data_to_put_next_cycle
         self.__output = self.__items[self.__next_address]
 
+    def reset(self):
+        # Memory itself cannot be reset,
+        pass
+
 
 # TODO: Can be implemented with BoundedRAM later.
-class BoundedMap:
+# TODO: Can be implemented with BoundedRAM later.
+class BoundedMap(SequentialModule):
     __capacity: int
     __items: dict[int, Q4_12]  # neuron id -> weight
 
@@ -115,6 +135,12 @@ class BoundedMap:
 
     def reset(self):
         self.__items = {}
+
+    def update(self):
+        pass
+
+    def commit(self):
+        pass
 
 
 @dataclass(frozen=True)
@@ -146,7 +172,7 @@ class SecondOrderShiftDecay:
         return (best_k1, best_k2)
 
 
-class MembranePotentialUpdater:
+class MembranePotentialUpdater(SequentialModule):
     __membrane_potential: Q4_12
     __next_membrane_potential: Q4_12
 
@@ -224,7 +250,7 @@ class MembranePotentialUpdater:
         self.__outbound_spike_packet = self.__next_outbound_spike_packet
 
 
-class NeuronCore:
+class NeuronCore(SequentialModule):
     __potential_updater: MembranePotentialUpdater
 
     def __init__(self, param: NeuronParameter):
