@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
 from enum import Enum
-from chronos.hardware_types import Q4_12, EventPacket, UInt
+from chronos.hardware_types import Q4_12, UInt
 
 
 class SequentialModule(ABC):
@@ -184,30 +184,34 @@ class MembranePotentialUpdater(SequentialModule):
         DECAY = 0
         SPIKE_RECEIVED = 1
 
-    __membrane_potential: Q4_12
-    __next_membrane_potential: Q4_12
+    # Sequential components
+    __weight_entry: BoundedRAM
 
+    # Runtime settings
     __k1: int
     __k2: int
 
-    __weight_entry: BoundedRAM
     __enqueued_spike_id: int
     __spike_threshold: Q4_12
+
+    # Update-dependent values
+    __membrane_potential: Q4_12
+    __next_membrane_potential: Q4_12
 
     __state: _States
     __next_state: _States
 
-    __outbound_spike_packet: EventPacket | None
-    __next_outbound_spike_packet: EventPacket | None
+    __should_fire_spike: bool
+    __next_should_fire_spike: bool
 
     def __init__(self, param: NeuronParameter):
         self.__k1 = param.k1
         self.__k2 = param.k2
         self.__weight_entry = BoundedRAM(Q4_12.WIDTH, param.weight_capacity)
         self.__spike_threshold = param.spike_threshold
-        self.__outbound_spike_packet = None
-        self.__next_outbound_spike_packet = None
         self.__enqueued_spike_id = -1
+        self.__should_fire_spike = False
+        self.__next_should_fire_spike = False
 
         self.reset()
 
@@ -216,8 +220,8 @@ class MembranePotentialUpdater(SequentialModule):
         return self.__membrane_potential
 
     @property
-    def outgoing_packet(self) -> EventPacket | None:
-        return self.__outbound_spike_packet
+    def should_fire_spike(self) -> bool:
+        return self.__should_fire_spike
 
     def enqueue_spike(self, neuron_id: int) -> bool:
         if self.__enqueued_spike_id == -1:
@@ -244,12 +248,6 @@ class MembranePotentialUpdater(SequentialModule):
         self.clear_synaptic_weight_entries()
 
     def update(self):
-        decayed = (
-            self.__membrane_potential
-            - (self.__membrane_potential >> self.__k1)
-            - (self.__membrane_potential >> self.__k2)
-        )
-
         if self.__enqueued_spike_id != -1:
             self.__weight_entry.get(self.__enqueued_spike_id)
             self.__next_state = MembranePotentialUpdater._States.SPIKE_RECEIVED
@@ -260,21 +258,26 @@ class MembranePotentialUpdater(SequentialModule):
         if self.__state == MembranePotentialUpdater._States.SPIKE_RECEIVED:
             weight_addition = Q4_12.from_uint(self.__weight_entry.output)
 
-        # TODO: Need spike fanout table later.
+        decayed = (
+            self.__membrane_potential
+            - (self.__membrane_potential >> self.__k1)
+            - (self.__membrane_potential >> self.__k2)
+        )
+
         summed = decayed + weight_addition
         if summed >= self.__spike_threshold:
             self.__next_membrane_potential = Q4_12(0)
-            self.__next_outbound_spike_packet = EventPacket(UInt(5, 0), UInt(16, 0))
+            self.__next_should_fire_spike = True
         else:
-            self.__next_membrane_potential = decayed + weight_addition
-            self.__next_outbound_spike_packet = None
+            self.__next_membrane_potential = summed
+            self.__next_should_fire_spike = False
 
         self.__weight_entry.update()
 
     def commit(self):
         self.__membrane_potential = self.__next_membrane_potential
-        self.__outbound_spike_packet = self.__next_outbound_spike_packet
         self.__state = self.__next_state
+        self.__should_fire_spike = self.__next_should_fire_spike
         self.__enqueued_spike_id = -1
 
         self.__weight_entry.commit()

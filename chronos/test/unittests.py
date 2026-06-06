@@ -344,7 +344,7 @@ class ChronosNeuronCoreSubblockUnitTests(unittest.TestCase):
         )
         self.assertEqual(updater.membrane_potential, last_expected)
 
-    def test_potential_updater_enqueues_outgoing_spike_packet_after_exceeding_threshold_at_next_cycle(
+    def test_potential_updater_should_notify_after_exceeding_threshold_at_next_cycle(
         self,
     ):
         initial = Q4_12.from_float(1.0)
@@ -358,16 +358,14 @@ class ChronosNeuronCoreSubblockUnitTests(unittest.TestCase):
         updater.update()
         updater.commit()
 
-        # TODO: For now, it only checks the presence of packet.
-        # Whenever a fanout table is introduced, this should check
-        # content equivalence as well.
-        self.assertNotEqual(updater.outgoing_packet, None)
+        # Cycle 0: Notify the downstream that Vmem
+        # has exceeded the threshold.
+        self.assertTrue(updater.should_fire_spike)
 
-        # Since it's supposed to be fire a spike, the outbound
-        # spike should disappear after a cycle.
+        # Cycle 1: Silence the notification.
         updater.update()
         updater.commit()
-        self.assertEqual(updater.outgoing_packet, None)
+        self.assertFalse(updater.should_fire_spike)
 
 
 class ChronosNeuronCoreIntegrateTests(unittest.TestCase):
