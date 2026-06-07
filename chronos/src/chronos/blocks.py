@@ -194,14 +194,25 @@ class BoundedQueue:
 class NeuronParameter:
     k1: int
     k2: int
-    weight_capacity: int
+    neuron_addr_width: int
     spike_threshold: Q4_12
+    max_fanout_spike_capacity: int
 
 
 @dataclass(frozen=True)
 class NeuronLocation:
     position: Coordinate
     local_position: Coordinate
+
+    def to_uint(self) -> UInt:
+        pos_as_uint = self.position.to_uint()
+        local_pos_as_uint = self.local_position.to_uint()
+        concated_width = self.position.width + self.local_position.width
+
+        return UInt(
+            concated_width,
+            local_pos_as_uint.value << self.position.width + pos_as_uint.value,
+        )
 
 
 class SecondOrderShiftDecay:
@@ -237,7 +248,7 @@ class MembranePotentialUpdater(SequentialModule):
     __k1: int
     __k2: int
 
-    __enqueued_spike_id: int
+    __enqueued_spike_loc: NeuronLocation | None
     __spike_threshold: Q4_12
 
     # Update-dependent values
@@ -253,9 +264,9 @@ class MembranePotentialUpdater(SequentialModule):
     def __init__(self, param: NeuronParameter):
         self.__k1 = param.k1
         self.__k2 = param.k2
-        self.__weight_entry = BoundedRAM(Q4_12.WIDTH, param.weight_capacity)
+        self.__weight_entry = BoundedRAM(Q4_12.WIDTH, param.neuron_addr_width)
         self.__spike_threshold = param.spike_threshold
-        self.__enqueued_spike_id = -1
+        self.__enqueued_spike_loc = None
         self.__should_fire_spike = False
         self.__next_should_fire_spike = False
 
@@ -269,14 +280,14 @@ class MembranePotentialUpdater(SequentialModule):
     def should_fire_spike(self) -> bool:
         return self.__should_fire_spike
 
-    def enqueue_spike(self, neuron_id: int) -> bool:
-        if self.__enqueued_spike_id == -1:
-            self.__enqueued_spike_id = neuron_id
+    def enqueue_spike(self, source_loc: NeuronLocation) -> bool:
+        if self.__enqueued_spike_loc is None:
+            self.__enqueued_spike_loc = source_loc
             return True
         return False
 
-    def add_synaptic_weight_entry(self, neuron_id: int, weight: Q4_12):
-        self.__weight_entry.put(neuron_id, weight.to_uint())
+    def add_synaptic_weight_entry(self, source_loc: NeuronLocation, weight: Q4_12):
+        self.__weight_entry.put(source_loc.to_uint().value, weight.to_uint())
 
     def clear_synaptic_weight_entries(self):
         self.__weight_entry.reset()
@@ -296,8 +307,8 @@ class MembranePotentialUpdater(SequentialModule):
     def update(self):
         self.__weight_entry.update()
 
-        if self.__enqueued_spike_id != -1:
-            self.__weight_entry.get(self.__enqueued_spike_id)
+        if self.__enqueued_spike_loc is not None:
+            self.__weight_entry.get(self.__enqueued_spike_loc.to_uint().value)
             self.__next_state = MembranePotentialUpdater._States.SPIKE_RECEIVED
         else:
             self.__next_state = MembranePotentialUpdater._States.DECAY
@@ -326,7 +337,7 @@ class MembranePotentialUpdater(SequentialModule):
         self.__membrane_potential = self.__next_membrane_potential
         self.__state = self.__next_state
         self.__should_fire_spike = self.__next_should_fire_spike
-        self.__enqueued_spike_id = -1
+        self.__enqueued_spike_loc = None
 
 
 class PacketSequencer(SequentialModule):
@@ -404,14 +415,13 @@ class PacketSequencer(SequentialModule):
         self.__memory.put(self.__entry_count, concated)
         self.__next_entry_count = self.__entry_count + 1
 
-    def enqueue_sequencing_request(self):
-        # TODO: May want to add small counter for pending sequencing requests later.
+    def enqueue_sequencing_request(self) -> bool:
         if self.__state == PacketSequencer._States.IDLE:
             self.__next_state = PacketSequencer._States.SEQUENCING
             self.__next_head = 0
-        else:
-            # TODO: Stub warning. Later replace this with counter.
-            print("Warning: incoming request was dropped because state wasn't IDLE")
+            return True
+
+        return False
 
     def update(self):
         self.__memory.update()
@@ -476,15 +486,44 @@ class PacketSequencer(SequentialModule):
 
 class NeuronCore(SequentialModule):
     __potential_updater: MembranePotentialUpdater
+    __sequencer: PacketSequencer
 
-    def __init__(self, param: NeuronParameter):
+    @property
+    def outgoing_packet(self) -> Packet:
+        return self.__sequencer.outgoing_packet
+
+    @property
+    def is_firing_packet(self) -> bool:
+        return self.__sequencer.is_busy
+
+    def __init__(self, loc: NeuronLocation, param: NeuronParameter):
         self.__potential_updater = MembranePotentialUpdater(param)
+        self.__sequencer = PacketSequencer(param.max_fanout_spike_capacity, loc)
+
+    def enqueue_packet(self, spike_packet: Packet) -> bool:
+        incoming_loc = NeuronLocation(spike_packet.source, spike_packet.source_local)
+        return self.__potential_updater.enqueue_spike(incoming_loc)
+
+    def add_synaptic_weight_entry(self, source_loc: NeuronLocation, weight: Q4_12):
+        self.__potential_updater.add_synaptic_weight_entry(source_loc, weight)
+
+    def clear_synaptic_weight_entries(self):
+        self.__potential_updater.clear_synaptic_weight_entries()
+
+    def add_destination_entry(self, dest: NeuronLocation):
+        self.__sequencer.add_destination_entry(dest)
 
     def reset(self):
         self.__potential_updater.reset()
+        self.__sequencer.reset()
 
+    # TODO: Should emulate stall behaviour if there's a pending sequencing request.
     def update(self):
         self.__potential_updater.update()
+        if self.__potential_updater.should_fire_spike:
+            self.__sequencer.enqueue_sequencing_request()
+        self.__sequencer.update()
 
     def commit(self):
         self.__potential_updater.commit()
+        self.__sequencer.commit()

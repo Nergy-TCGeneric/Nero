@@ -333,7 +333,7 @@ class ChronosNeuronCoreSubblockUnitTests(unittest.TestCase):
         k1, k2 = SecondOrderShiftDecay.find_decay_shifts(approx_decay_rate)
         spike_threshold = Q4_12.from_float(2.0)
 
-        param = NeuronParameter(k1, k2, 4, spike_threshold)
+        param = NeuronParameter(k1, k2, 4, spike_threshold, 1)
         updater = MembranePotentialUpdater(param)
         updater.reset()
 
@@ -350,19 +350,23 @@ class ChronosNeuronCoreSubblockUnitTests(unittest.TestCase):
         k1, k2 = SecondOrderShiftDecay.find_decay_shifts(approx_decay_rate)
         spike_threshold = Q4_12.from_float(2.0)
 
-        param = NeuronParameter(k1, k2, 4, spike_threshold)
+        param = NeuronParameter(k1, k2, 4, spike_threshold, 1)
         updater = MembranePotentialUpdater(param)
         updater.reset()
 
+        source_neuron_loc = Coordinate(UInt(1, 1), UInt(1, 0))
+        source_local_loc = Coordinate(UInt(1, 0), UInt(1, 1))
+        source_loc = NeuronLocation(source_neuron_loc, source_local_loc)
+
         # Cycle 0: Adding synaptic weight.
         synaptic_weight = Q4_12.from_float(0.5)
-        updater.add_synaptic_weight_entry(0, synaptic_weight)
+        updater.add_synaptic_weight_entry(source_loc, synaptic_weight)
         updater.update()
         updater.commit()
 
         # Cycle 1: Inject an incoming spike, with weight = 0.5
         updater.set_membrane_potential(initial)
-        updater.enqueue_spike(0)
+        updater.enqueue_spike(source_loc)
         updater.update()
         updater.commit()
 
@@ -389,7 +393,7 @@ class ChronosNeuronCoreSubblockUnitTests(unittest.TestCase):
         spike_threshold = Q4_12.from_float(1.0)
 
         # Set k1, k2 absurdly high so no decay would occur.
-        param = NeuronParameter(16, 16, 4, spike_threshold)
+        param = NeuronParameter(16, 16, 4, spike_threshold, 1)
         updater = MembranePotentialUpdater(param)
 
         updater.set_membrane_potential(initial)
@@ -533,21 +537,6 @@ class ChronosNeuronCoreSubblockUnitTests(unittest.TestCase):
 
 
 class ChronosNeuronCoreIntegrateTests(unittest.TestCase):
-    def test_core_decays_membrane_potential_per_cycle(self):
-        pass
-
-    def test_core_adds_synaptic_weight_to_potential_after_receiving_spike(self):
-        pass
-
-    def test_core_outbound_spike_buffer_dequeue_requires_1_cycle(self):
-        pass
-
-    def test_core_enqueues_outbound_spike_at_next_cycle_when_threshold_exceeded(self):
-        pass
-
-    def test_core_enqueues_fanout_spikes_at_most_once_per_cycle_in_table_order(self):
-        pass
-
     def test_core_never_drops_pending_fanout_spikes_during_stall(self):
         pass
 
