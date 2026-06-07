@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
 from enum import Enum
+from random import randint
 
 from chronos.hardware_types import Q4_12, UInt
 from chronos.packets import Coordinate, EventPayloadFormat, Opcode, Packet
@@ -73,11 +74,16 @@ class BoundedRAM(SequentialModule):
                 f"Only non-negative capacity is valid for RAM, but got : {capacity}"
             )
 
+        if bit_width <= 0:
+            raise ValueError(
+                f"Bit width for BoundedRAM must be positive, got {bit_width}."
+            )
+
         self.__capacity = capacity
         self.__bit_width = bit_width
         self.__items = [
-            UInt(bit_width) for _ in range(capacity)
-        ]  # TODO: Initialize with random UInt later
+            UInt(bit_width, randint(0, 2**bit_width - 1)) for _ in range(capacity)
+        ]
         self.__should_put_next_cycle = False
         self.__next_address = 0
         self.__output = self.__items[self.__next_address]

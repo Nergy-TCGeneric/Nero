@@ -145,6 +145,12 @@ class ChronosUIntUnitTests(unittest.TestCase):
 
 
 class ChronosBoundedRAMUnitTests(unittest.TestCase):
+    def test_ram_raises_an_exception_on_non_positive_bit_width(self):
+        with self.assertRaises(ValueError):
+            BoundedRAM(0)
+        with self.assertRaises(ValueError):
+            BoundedRAM(-1)
+
     def test_ram_raises_an_exception_if_data_width_differs(self):
         ram = BoundedRAM(4)
 
