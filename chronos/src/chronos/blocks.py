@@ -250,14 +250,16 @@ class MembranePotentialUpdater(SequentialModule):
         self.__membrane_potential = v
 
     def reset(self):
+        self.clear_synaptic_weight_entries()
+
         self.__state = MembranePotentialUpdater._States.DECAY
         self.__next_state = MembranePotentialUpdater._States.DECAY
         self.__membrane_potential = Q4_12(0)
         self.__next_membrane_potential = Q4_12(0)
 
-        self.clear_synaptic_weight_entries()
-
     def update(self):
+        self.__weight_entry.update()
+
         if self.__enqueued_spike_id != -1:
             self.__weight_entry.get(self.__enqueued_spike_id)
             self.__next_state = MembranePotentialUpdater._States.SPIKE_RECEIVED
@@ -282,15 +284,13 @@ class MembranePotentialUpdater(SequentialModule):
             self.__next_membrane_potential = summed
             self.__next_should_fire_spike = False
 
-        self.__weight_entry.update()
-
     def commit(self):
+        self.__weight_entry.commit()
+
         self.__membrane_potential = self.__next_membrane_potential
         self.__state = self.__next_state
         self.__should_fire_spike = self.__next_should_fire_spike
         self.__enqueued_spike_id = -1
-
-        self.__weight_entry.commit()
 
 
 class PacketSequencer(SequentialModule):
@@ -388,8 +388,6 @@ class PacketSequencer(SequentialModule):
         self.__memory.update()
 
     def commit(self):
-
-        # TODO: Need to precisely define the timings.
         self.__memory.commit()
 
         self.__entry_count = self.__next_entry_count
