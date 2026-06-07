@@ -458,6 +458,7 @@ class ChronosNeuronCoreSubblockUnitTests(unittest.TestCase):
         self.assertEqual(packet.destination, first_dest_pos)
         self.assertEqual(packet.source_local, source_local_pos)
         self.assertEqual(packet.dest_local, first_dest_local_pos)
+        self.assertEqual(packet.timestamp, UInt(PacketSequencer.TIMESTAMP_WIDTH, 3))
         self.assertTrue(isinstance(packet.format, EventPayloadFormat))
 
         event_packet = cast(EventPayloadFormat, packet.format)
@@ -508,6 +509,7 @@ class ChronosNeuronCoreSubblockUnitTests(unittest.TestCase):
         self.assertEqual(packet.destination, first_dest_pos)
         self.assertEqual(packet.source_local, source_local_pos)
         self.assertEqual(packet.dest_local, first_dest_local_pos)
+        self.assertEqual(packet.timestamp, UInt(PacketSequencer.TIMESTAMP_WIDTH, 4))
         self.assertTrue(isinstance(packet.format, EventPayloadFormat))
 
         event_packet = cast(EventPayloadFormat, packet.format)
@@ -523,6 +525,7 @@ class ChronosNeuronCoreSubblockUnitTests(unittest.TestCase):
         self.assertEqual(packet.destination, second_dest_pos)
         self.assertEqual(packet.source_local, source_local_pos)
         self.assertEqual(packet.dest_local, second_dest_local_pos)
+        self.assertEqual(packet.timestamp, UInt(PacketSequencer.TIMESTAMP_WIDTH, 5))
         self.assertTrue(isinstance(packet.format, EventPayloadFormat))
 
         event_packet = cast(EventPayloadFormat, packet.format)

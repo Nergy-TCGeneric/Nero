@@ -330,12 +330,16 @@ class MembranePotentialUpdater(SequentialModule):
 
 
 class PacketSequencer(SequentialModule):
+    # TODO: Stub value, should be configruable via NeuronParameter.
+    TIMESTAMP_WIDTH = 8
+
     class _States(Enum):
         IDLE = 0
         SEQUENCING = 1
 
     # Sequential components
     __memory: BoundedRAM
+    __time_recorder: Counter
 
     # Runtime settings
     __capacity: int
@@ -365,6 +369,7 @@ class PacketSequencer(SequentialModule):
         dest_addr_width = loc.position.width + loc.local_position.width
         self.__capacity = capacity
         self.__memory = BoundedRAM(dest_addr_width, capacity)
+        self.__time_recorder = Counter(PacketSequencer.TIMESTAMP_WIDTH)
         self.reset()
 
     @property
@@ -409,6 +414,9 @@ class PacketSequencer(SequentialModule):
             print("Warning: incoming request was dropped because state wasn't IDLE")
 
     def update(self):
+        self.__memory.update()
+        self.__time_recorder.update()
+
         end_of_sequence = self.__head >= self.__entry_count - 1
 
         # Advance the head, if it's sequencing.
@@ -421,10 +429,9 @@ class PacketSequencer(SequentialModule):
                 self.__next_head = self.__head + 1
                 self.__next_state = PacketSequencer._States.SEQUENCING
 
-        self.__memory.update()
-
     def commit(self):
         self.__memory.commit()
+        self.__time_recorder.commit()
 
         self.__entry_count = self.__next_entry_count
         self.__head = self.__next_head
@@ -446,25 +453,25 @@ class PacketSequencer(SequentialModule):
         # Payload is don't care, so use it as is.
         event_format = EventPayloadFormat(Opcode.SPIKE)
 
-        # TODO: Timestamp is filled with stub. Add a counter later.
         self.__outgoing_packet = Packet(
             self.__position,
             destination,
             self.__local_position,
             local_dest,
-            UInt(8),
+            self.__time_recorder.value,
             event_format,
         )
 
     def reset(self):
+        self.__memory.reset()
+        self.__time_recorder.reset()
+
         self.__next_entry_count = 0
         self.__entry_count = 0
         self.__next_head = 0
         self.__head = 0
         self.__next_state = PacketSequencer._States.IDLE
         self.__state = PacketSequencer._States.IDLE
-
-        self.__memory.reset()
 
 
 class NeuronCore(SequentialModule):
