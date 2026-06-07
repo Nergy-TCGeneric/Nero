@@ -8,6 +8,7 @@ sys.path.append(str(Path(__file__).parent.parent / "src"))
 
 from chronos.blocks import (
     BoundedRAM,
+    Counter,
     NeuronLocation,
     NeuronParameter,
     PacketSequencer,
@@ -293,6 +294,33 @@ class ChronosRouterBlockUnitTests(unittest.TestCase):
 
 
 class ChronosNeuronCoreSubblockUnitTests(unittest.TestCase):
+    def test_counter_triggers_exception_on_non_positive_width(self):
+        with self.assertRaises(ValueError):
+            Counter(0)
+        with self.assertRaises(ValueError):
+            Counter(-1)
+
+    def test_counter_correctly_increases_on_each_cycle(self):
+        counter = Counter(2)
+        self.assertEqual(counter.value, UInt(2, 0))
+
+        counter.update()
+        counter.commit()
+        self.assertEqual(counter.value, UInt(2, 1))
+
+        counter.update()
+        counter.commit()
+        self.assertEqual(counter.value, UInt(2, 2))
+
+        counter.update()
+        counter.commit()
+        self.assertEqual(counter.value, UInt(2, 3))
+
+        # Wrapping around is an intended behaviour.
+        counter.update()
+        counter.commit()
+        self.assertEqual(counter.value, UInt(2, 0))
+
     def test_potential_updater_decays_per_cycle_without_input(self):
         initial = Q4_12.from_float(1.0)
         approx_decay_rate = 0.98

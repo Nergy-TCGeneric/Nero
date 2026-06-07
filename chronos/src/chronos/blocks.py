@@ -21,6 +21,36 @@ class SequentialModule(ABC):
         pass
 
 
+class Counter(SequentialModule):
+    __bit_width: int
+
+    __next_count: UInt
+    __count: UInt
+
+    def __init__(self, bit_width: int):
+        if bit_width <= 0:
+            raise ValueError(
+                f"Counter bit width must be greater than 0, got {bit_width}"
+            )
+
+        self.__bit_width = bit_width
+        self.reset()
+
+    @property
+    def value(self) -> UInt:
+        return self.__count
+
+    def update(self):
+        self.__next_count = self.__count + UInt(self.__bit_width, 1)
+
+    def commit(self):
+        self.__count = self.__next_count
+
+    def reset(self):
+        self.__next_count = UInt(self.__bit_width)
+        self.__count = UInt(self.__bit_width)
+
+
 # This is a simple dual-port, write-first memory.
 # That is, when written to specific memory address
 # the memory returns a new 'written' data.
