@@ -1,14 +1,9 @@
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
 from enum import Enum
-from chronos.hardware_types import (
-    Q4_12,
-    Coordinate,
-    EventPayloadFormat,
-    Opcode,
-    Packet,
-    UInt,
-)
+
+from chronos.hardware_types import Q4_12, UInt
+from chronos.packets import Coordinate, EventPayloadFormat, Opcode, Packet
 from chronos.utils import BitFieldExtractor
 
 
@@ -405,14 +400,11 @@ class PacketSequencer(SequentialModule):
         dest_as_uint = self.__memory.output
         extractor = BitFieldExtractor(dest_as_uint.value, dest_as_uint.width)
         destination = Coordinate.from_uint(
-            UInt(self.__position.width, extractor.next(self.__position.width)),
+            extractor.next(self.__position.width),
             self.__position.width // 2,
         )
         local_dest = Coordinate.from_uint(
-            UInt(
-                self.__local_position.width,
-                extractor.next(self.__local_position.width),
-            ),
+            extractor.next(self.__local_position.width),
             self.__local_position.width // 2,
         )
 

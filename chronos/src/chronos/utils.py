@@ -1,3 +1,6 @@
+from chronos.hardware_types import UInt
+
+
 class BitField:
     @staticmethod
     # Creates a bit mask that extracts bits in [start, end).
@@ -29,11 +32,14 @@ class BitFieldExtractor:
         self.__cursor = 0
         self.__max_width = max_width
 
-    def next(self, width: int) -> int:
+    def next(self, width: int) -> UInt:
         if width < 0:
             raise ValueError("Width cannot be negative.")
 
         advanced_cursor = min(self.__cursor + width, self.__max_width)
-        extracted = BitField.extract_from(self.__data, self.__cursor, advanced_cursor)
+        extracted = UInt(
+            width, BitField.extract_from(self.__data, self.__cursor, advanced_cursor)
+        )
+
         self.__cursor = advanced_cursor
         return extracted
