@@ -301,7 +301,7 @@ class ChronosRouterBlockUnitTests(unittest.TestCase):
         pass
 
 
-class ChronosNeuronCoreSubblockUnitTests(unittest.TestCase):
+class ChronosDecoderUnitTests(unittest.TestCase):
     def test_decoder_outputs_west_when_packet_needs_to_move_left(self):
         # (2, 2) -> (1, 2)
         router_loc = Coordinate(UInt(4, 2), UInt(4, 2))
@@ -442,6 +442,8 @@ class ChronosNeuronCoreSubblockUnitTests(unittest.TestCase):
         expected = {Direction.LOCAL3}
         self.assertEqual(decoder.decode(dest_loc), expected)
 
+
+class ChronosCounterUnitTests(unittest.TestCase):
     def test_counter_triggers_exception_on_non_positive_width(self):
         with self.assertRaises(ValueError):
             Counter(0)
@@ -469,6 +471,8 @@ class ChronosNeuronCoreSubblockUnitTests(unittest.TestCase):
         counter.commit()
         self.assertEqual(counter.value, UInt(2, 0))
 
+
+class ChronosPotentialUpdaterUnitTests(unittest.TestCase):
     def test_potential_updater_decays_per_cycle_without_input(self):
         initial = Q4_12.from_float(1.0)
         approx_decay_rate = 0.98
@@ -551,6 +555,8 @@ class ChronosNeuronCoreSubblockUnitTests(unittest.TestCase):
         updater.commit()
         self.assertFalse(updater.should_fire_spike)
 
+
+class ChronosPacketSequencerUnitTests(unittest.TestCase):
     def test_packet_sequencer_triggers_overflow_exception_on_adding_entry_when_full(
         self,
     ):
