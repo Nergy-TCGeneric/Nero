@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
-from enum import Enum
+from enum import IntEnum
 from random import randint
 
 from chronos.hardware_types import Q4_12, UInt
@@ -237,7 +237,7 @@ class SecondOrderShiftDecay:
 
 
 class MembranePotentialUpdater(SequentialModule):
-    class _States(Enum):
+    class _States(IntEnum):
         DECAY = 0
         SPIKE_RECEIVED = 1
 
@@ -344,7 +344,7 @@ class PacketSequencer(SequentialModule):
     # TODO: Stub value, should be configruable via NeuronParameter.
     TIMESTAMP_WIDTH = 8
 
-    class _States(Enum):
+    class _States(IntEnum):
         IDLE = 0
         SEQUENCING = 1
 
@@ -529,7 +529,8 @@ class NeuronCore(SequentialModule):
         self.__sequencer.commit()
 
 
-class Direction(Enum):
+# A direction, encoded with priority.
+class Direction(IntEnum):
     NORTH = 0
     EAST = 1
     SOUTH = 2
@@ -585,3 +586,61 @@ class Decoder:
 
         return available
 
+
+class RoundRobinArbiter(SequentialModule):
+    __grant: Direction | None
+    __next_grant: Direction | None
+
+    __pending_requests: set[Direction]
+    __next_pending_requests: set[Direction]
+
+    def __init__(self):
+        self.reset()
+
+    @property
+    def grant(self) -> Direction | None:
+        return self.__grant
+
+    def reset(self):
+        self.__grant = None
+        self.__next_grant = None
+        self.__pending_requests = set()
+        self.__next_pending_requests = set()
+
+    def put_request_from_direction(self, direction: Direction) -> bool:
+        if direction in self.__pending_requests:
+            return False
+
+        self.__pending_requests.add(direction)
+        return True
+
+    def update(self):
+        # Whole comparison is based on their priority.
+        if self.__grant is None:
+            self.__next_grant = min(self.__pending_requests, default=None)
+        else:
+            # Wrap to lowest one if none of requests can be granted with this state.
+            self.__next_grant = min(
+                (req for req in self.__pending_requests if req > self.__grant),
+                default=min(self.__pending_requests, default=None),
+            )
+        self.__next_pending_requests = self.__pending_requests.difference(
+            {self.__next_grant}
+        )
+
+    def commit(self):
+        self.__grant = self.__next_grant
+        self.__pending_requests = self.__next_pending_requests
+
+
+
+
+class Router(SequentialModule):
+    def reset(self):
+        pass
+
+    def update(self):
+        pass
+
+    def commit(self):
+        pass

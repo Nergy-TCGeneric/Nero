@@ -14,6 +14,7 @@ from chronos.blocks import (
     PacketSequencer,
     Decoder,
     Direction,
+    RoundRobinArbiter,
     SecondOrderShiftDecay,
     MembranePotentialUpdater,
 )
@@ -299,6 +300,78 @@ class ChronosRouterBlockUnitTests(unittest.TestCase):
 
     def test_router_never_drops_packet(self):
         pass
+
+
+class ChronosRoundRobinArbiterUnitTests(unittest.TestCase):
+    def test_arbiter_should_grant_no_one_if_there_is_no_request(self):
+        arbiter = RoundRobinArbiter()
+        arbiter.update()
+        arbiter.commit()
+
+        self.assertEqual(arbiter.grant, None)
+
+    def test_arbiter_should_grant_incoming_request_at_next_cycle(self):
+        arbiter = RoundRobinArbiter()
+        arbiter.put_request_from_direction(Direction.NORTH)
+
+        arbiter.update()
+        arbiter.commit()
+        self.assertEqual(arbiter.grant, Direction.NORTH)
+
+        arbiter.update()
+        arbiter.commit()
+        self.assertEqual(arbiter.grant, None)
+
+    def test_arbiter_should_eventually_grant_all_incoming_and_pending_requests(self):
+        arbiter = RoundRobinArbiter()
+
+        # Push all and see if they're all eventually granted, one by one.
+        for direction in Direction:
+            arbiter.put_request_from_direction(direction)
+
+        def check_grant_at(arbiter: RoundRobinArbiter, direction: Direction):
+            arbiter.update()
+            arbiter.commit()
+            self.assertEqual(arbiter.grant, direction)
+
+        for direction in Direction:
+            check_grant_at(arbiter, direction)
+
+        arbiter.update()
+        arbiter.commit()
+        self.assertEqual(arbiter.grant, None)
+
+    def test_arbiter_should_grant_different_request_when_multiple_request_exist_and_previous_request_comes_again(
+        self,
+    ):
+        arbiter = RoundRobinArbiter()
+        arbiter.put_request_from_direction(Direction.NORTH)
+        arbiter.put_request_from_direction(Direction.SOUTH)
+
+        arbiter.update()
+        arbiter.commit()
+        self.assertEqual(arbiter.grant, Direction.NORTH)
+
+        # Push north request once again and see if it's not selected at next cycle.
+        arbiter.put_request_from_direction(Direction.NORTH)
+
+        arbiter.update()
+        arbiter.commit()
+        self.assertEqual(arbiter.grant, Direction.SOUTH)
+
+        arbiter.update()
+        arbiter.commit()
+        self.assertEqual(arbiter.grant, Direction.NORTH)
+
+    def test_arbiter_should_reject_putting_multiple_identical_request_at_once(self):
+        arbiter = RoundRobinArbiter()
+        self.assertTrue(arbiter.put_request_from_direction(Direction.NORTH))
+        self.assertFalse(arbiter.put_request_from_direction(Direction.NORTH))
+
+        arbiter.update()
+        arbiter.commit()
+        self.assertTrue(arbiter.put_request_from_direction(Direction.NORTH))
+        self.assertFalse(arbiter.put_request_from_direction(Direction.NORTH))
 
 
 class ChronosDecoderUnitTests(unittest.TestCase):
