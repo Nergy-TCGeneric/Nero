@@ -527,3 +527,61 @@ class NeuronCore(SequentialModule):
     def commit(self):
         self.__potential_updater.commit()
         self.__sequencer.commit()
+
+
+class Direction(Enum):
+    NORTH = 0
+    EAST = 1
+    SOUTH = 2
+    WEST = 3
+    LOCAL0 = 4
+    LOCAL1 = 5
+    LOCAL2 = 6
+    LOCAL3 = 7
+
+
+# This is a combinatorial sub-block.
+class Decoder:
+    __router_loc: Coordinate
+
+    def __init__(self, router_loc: Coordinate):
+        self.__router_loc = router_loc
+
+    def decode(self, dest_loc: NeuronLocation) -> set[Direction]:
+        available = set[Direction]()
+
+        dest_neuron_loc = dest_loc.position
+        dest_local_loc = dest_loc.local_position
+        toward_local = dest_neuron_loc == self.__router_loc
+
+        # TODO: Assumes 4 neurons attached to a router,
+        # i.e, local address spans from (0, 0) to (1, 1).
+        if toward_local:
+            if dest_local_loc.x == UInt(
+                dest_local_loc.width, 0
+            ) and dest_local_loc.y == UInt(dest_local_loc.width, 0):
+                available.add(Direction.LOCAL0)
+            elif dest_local_loc.x == UInt(
+                dest_local_loc.width, 1
+            ) and dest_local_loc.y == UInt(dest_local_loc.width, 0):
+                available.add(Direction.LOCAL1)
+            elif dest_local_loc.x == UInt(
+                dest_local_loc.width, 0
+            ) and dest_local_loc.y == UInt(dest_local_loc.width, 1):
+                available.add(Direction.LOCAL2)
+            elif dest_local_loc.x == UInt(
+                dest_local_loc.width, 1
+            ) and dest_local_loc.y == UInt(dest_local_loc.width, 1):
+                available.add(Direction.LOCAL3)
+        else:
+            if self.__router_loc.x < dest_neuron_loc.x:
+                available.add(Direction.EAST)
+            elif self.__router_loc.x > dest_neuron_loc.x:
+                available.add(Direction.WEST)
+            if self.__router_loc.y < dest_neuron_loc.y:
+                available.add(Direction.NORTH)
+            elif self.__router_loc.y > dest_neuron_loc.y:
+                available.add(Direction.SOUTH)
+
+        return available
+

@@ -12,6 +12,8 @@ from chronos.blocks import (
     NeuronLocation,
     NeuronParameter,
     PacketSequencer,
+    Decoder,
+    Direction,
     SecondOrderShiftDecay,
     MembranePotentialUpdater,
 )
@@ -300,6 +302,146 @@ class ChronosRouterBlockUnitTests(unittest.TestCase):
 
 
 class ChronosNeuronCoreSubblockUnitTests(unittest.TestCase):
+    def test_decoder_outputs_west_when_packet_needs_to_move_left(self):
+        # (2, 2) -> (1, 2)
+        router_loc = Coordinate(UInt(4, 2), UInt(4, 2))
+        decoder = Decoder(router_loc)
+
+        dest_neuron_loc = Coordinate(UInt(4, 1), UInt(4, 2))
+        dest_local_loc = Coordinate(UInt(1, 0), UInt(1, 0))
+        dest_loc = NeuronLocation(dest_neuron_loc, dest_local_loc)
+
+        expected = {Direction.WEST}
+        self.assertEqual(decoder.decode(dest_loc), expected)
+
+    def test_decoder_outputs_east_when_packet_needs_to_move_right(self):
+        # (2, 2) -> (3, 2)
+        router_loc = Coordinate(UInt(4, 2), UInt(4, 2))
+        decoder = Decoder(router_loc)
+
+        dest_neuron_loc = Coordinate(UInt(4, 3), UInt(4, 2))
+        dest_local_loc = Coordinate(UInt(1, 0), UInt(1, 0))
+        dest_loc = NeuronLocation(dest_neuron_loc, dest_local_loc)
+
+        expected = {Direction.EAST}
+        self.assertEqual(decoder.decode(dest_loc), expected)
+
+    def test_decoder_outputs_north_when_packet_needs_to_move_up(self):
+        # (2, 2) -> (2, 3)
+        router_loc = Coordinate(UInt(4, 2), UInt(4, 2))
+        decoder = Decoder(router_loc)
+
+        dest_neuron_loc = Coordinate(UInt(4, 2), UInt(4, 3))
+        dest_local_loc = Coordinate(UInt(1, 0), UInt(1, 0))
+        dest_loc = NeuronLocation(dest_neuron_loc, dest_local_loc)
+
+        expected = {Direction.NORTH}
+        self.assertEqual(decoder.decode(dest_loc), expected)
+
+    def test_decoder_outputs_south_when_packet_needs_to_move_down(self):
+        # (2, 2) -> (2, 1)
+        router_loc = Coordinate(UInt(4, 2), UInt(4, 2))
+        decoder = Decoder(router_loc)
+
+        dest_neuron_loc = Coordinate(UInt(4, 2), UInt(4, 1))
+        dest_local_loc = Coordinate(UInt(1, 0), UInt(1, 0))
+        dest_loc = NeuronLocation(dest_neuron_loc, dest_local_loc)
+
+        expected = {Direction.SOUTH}
+        self.assertEqual(decoder.decode(dest_loc), expected)
+
+    def test_decoder_outputs_west_and_north_when_packet_can_move_to_left_or_up(self):
+        # (2, 2) -> (1, 3)
+        router_loc = Coordinate(UInt(4, 2), UInt(4, 2))
+        decoder = Decoder(router_loc)
+
+        dest_neuron_loc = Coordinate(UInt(4, 1), UInt(4, 3))
+        dest_local_loc = Coordinate(UInt(1, 0), UInt(1, 0))
+        dest_loc = NeuronLocation(dest_neuron_loc, dest_local_loc)
+
+        expected = {Direction.WEST, Direction.NORTH}
+        self.assertEqual(decoder.decode(dest_loc), expected)
+
+    def test_decoder_outputs_west_and_south_when_packet_can_move_to_left_or_down(self):
+        # (2, 2) -> (1, 1)
+        router_loc = Coordinate(UInt(4, 2), UInt(4, 2))
+        decoder = Decoder(router_loc)
+
+        dest_neuron_loc = Coordinate(UInt(4, 1), UInt(4, 1))
+        dest_local_loc = Coordinate(UInt(1, 0), UInt(1, 0))
+        dest_loc = NeuronLocation(dest_neuron_loc, dest_local_loc)
+
+        expected = {Direction.WEST, Direction.SOUTH}
+        self.assertEqual(decoder.decode(dest_loc), expected)
+
+    def test_decoder_outputs_east_and_north_when_packet_can_move_to_right_or_up(self):
+        # (2, 2) -> (3, 3)
+        router_loc = Coordinate(UInt(4, 2), UInt(4, 2))
+        decoder = Decoder(router_loc)
+
+        dest_neuron_loc = Coordinate(UInt(4, 3), UInt(4, 3))
+        dest_local_loc = Coordinate(UInt(1, 0), UInt(1, 0))
+        dest_loc = NeuronLocation(dest_neuron_loc, dest_local_loc)
+
+        expected = {Direction.EAST, Direction.NORTH}
+        self.assertEqual(decoder.decode(dest_loc), expected)
+
+    def test_decoder_outputs_east_and_south_when_packet_can_move_to_right_or_down(self):
+        # (2, 2) -> (3, 1)
+        router_loc = Coordinate(UInt(4, 2), UInt(4, 2))
+        decoder = Decoder(router_loc)
+
+        dest_neuron_loc = Coordinate(UInt(4, 3), UInt(4, 1))
+        dest_local_loc = Coordinate(UInt(1, 0), UInt(1, 0))
+        dest_loc = NeuronLocation(dest_neuron_loc, dest_local_loc)
+
+        expected = {Direction.EAST, Direction.SOUTH}
+        self.assertEqual(decoder.decode(dest_loc), expected)
+
+    def test_decoder_outputs_local_0_when_packet_can_move_to_neuron_at_0_0(self):
+        router_loc = Coordinate(UInt(4, 2), UInt(4, 2))
+        decoder = Decoder(router_loc)
+
+        dest_neuron_loc = Coordinate(UInt(4, 2), UInt(4, 2))
+        dest_local_loc = Coordinate(UInt(1, 0), UInt(1, 0))
+        dest_loc = NeuronLocation(dest_neuron_loc, dest_local_loc)
+
+        expected = {Direction.LOCAL0}
+        self.assertEqual(decoder.decode(dest_loc), expected)
+
+    def test_decoder_outputs_local_1_when_packet_can_move_to_neuron_at_0_1(self):
+        router_loc = Coordinate(UInt(4, 2), UInt(4, 2))
+        decoder = Decoder(router_loc)
+
+        dest_neuron_loc = Coordinate(UInt(4, 2), UInt(4, 2))
+        dest_local_loc = Coordinate(UInt(1, 1), UInt(1, 0))
+        dest_loc = NeuronLocation(dest_neuron_loc, dest_local_loc)
+
+        expected = {Direction.LOCAL1}
+        self.assertEqual(decoder.decode(dest_loc), expected)
+
+    def test_decoder_outputs_local_2_when_packet_can_move_to_neuron_at_1_0(self):
+        router_loc = Coordinate(UInt(4, 2), UInt(4, 2))
+        decoder = Decoder(router_loc)
+
+        dest_neuron_loc = Coordinate(UInt(4, 2), UInt(4, 2))
+        dest_local_loc = Coordinate(UInt(1, 0), UInt(1, 1))
+        dest_loc = NeuronLocation(dest_neuron_loc, dest_local_loc)
+
+        expected = {Direction.LOCAL2}
+        self.assertEqual(decoder.decode(dest_loc), expected)
+
+    def test_decoder_outputs_local_3_when_packet_can_move_to_neuron_at_1_1(self):
+        router_loc = Coordinate(UInt(4, 2), UInt(4, 2))
+        decoder = Decoder(router_loc)
+
+        dest_neuron_loc = Coordinate(UInt(4, 2), UInt(4, 2))
+        dest_local_loc = Coordinate(UInt(1, 1), UInt(1, 1))
+        dest_loc = NeuronLocation(dest_neuron_loc, dest_local_loc)
+
+        expected = {Direction.LOCAL3}
+        self.assertEqual(decoder.decode(dest_loc), expected)
+
     def test_counter_triggers_exception_on_non_positive_width(self):
         with self.assertRaises(ValueError):
             Counter(0)

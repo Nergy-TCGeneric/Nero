@@ -107,6 +107,18 @@ class UInt:
     def __eq__(self, other):
         return isinstance(other, UInt) and self.value == other.value
 
+    def __lt__(self, other):
+        return isinstance(other, UInt) and self.value < other.value
+
+    def __le__(self, other):
+        return self < other or self == other
+
+    def __gt__(self, other):
+        return not self < other and not self == other
+
+    def __ge__(self, other):
+        return not self < other
+
     def __str__(self) -> str:
         return f"{self.value}<{self.width}>"
 
