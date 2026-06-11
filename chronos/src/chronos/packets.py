@@ -135,6 +135,35 @@ class Packet:
     format: EventPayloadFormat | ResponsePayloadFormat
 
     @classmethod
+    # Creates spike packet in a simple way. Assumes 8-bit timestamp.
+    # Both location follows format: (x, y, local_x, local_y).
+    # NOTE: This doesn't check overflow.
+    def create_spike_packet(
+        cls,
+        addr_width: int,
+        source_loc: tuple[int, int, int, int],
+        dest_loc: tuple[int, int, int, int],
+        timestamp: int,
+    ) -> "Packet":
+        src_loc = Coordinate(
+            UInt(addr_width, source_loc[0]),
+            UInt(addr_width, source_loc[1]),
+        )
+        src_local_loc = Coordinate(
+            UInt(addr_width, source_loc[2]), UInt(addr_width, source_loc[3])
+        )
+        dst_loc = Coordinate(
+            UInt(addr_width, dest_loc[0]), UInt(addr_width, dest_loc[1])
+        )
+        dst_local_loc = Coordinate(
+            UInt(addr_width, dest_loc[2]), UInt(addr_width, dest_loc[3])
+        )
+        stamp = UInt(8, timestamp)
+        format = EventPayloadFormat(Opcode.SPIKE)
+
+        return cls(src_loc, dst_loc, src_local_loc, dst_local_loc, stamp, format)
+
+    @classmethod
     def from_uint(
         cls,
         x: UInt,
@@ -174,6 +203,14 @@ class Packet:
             timestamp,
             format,
         )
+
+    @property
+    def source_location(self) -> NeuronLocation:
+        return NeuronLocation(self.source, self.source_local)
+
+    @property
+    def destination_location(self) -> NeuronLocation:
+        return NeuronLocation(self.destination, self.dest_local)
 
     @property
     def width(self) -> int:

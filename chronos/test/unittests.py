@@ -12,13 +12,20 @@ from chronos.blocks import (
     NeuronParameter,
     PacketSequencer,
     Decoder,
+    Crossbar8x8,
     Direction,
     RoundRobinArbiter,
     SecondOrderShiftDecay,
     MembranePotentialUpdater,
 )
 from chronos.hardware_types import Q4_12, UInt
-from chronos.packets import EventPayloadFormat, Coordinate, Opcode, NeuronLocation
+from chronos.packets import (
+    EventPayloadFormat,
+    Coordinate,
+    Opcode,
+    NeuronLocation,
+    Packet,
+)
 
 
 class ChronosQ4_12UnitTests(unittest.TestCase):
@@ -299,6 +306,301 @@ class ChronosRouterBlockUnitTests(unittest.TestCase):
 
     def test_router_never_drops_packet(self):
         pass
+
+
+class ChronosCrossbar8x8UnitTests(unittest.TestCase):
+    def __push_all_recipient_ready(self, crossbar: Crossbar8x8):
+        for dir in Direction:
+            self.assertTrue(crossbar.push_ready(dir))
+
+    # A shortcut of creating spike packet.
+    def __create_spike_packet(
+        self, source_loc: tuple[int, int], dest_loc: tuple[int, int, int, int]
+    ) -> Packet:
+        return Packet.create_spike_packet(
+            4, (source_loc[0], source_loc[1], 0, 0), dest_loc, 0
+        )
+
+    def __create_destination_coordinate(
+        self, source: tuple[int, int], direction: Direction
+    ) -> tuple[int, int, int, int]:
+        if direction == Direction.NORTH:
+            return (source[0], source[1] + 1, 0, 0)
+        elif direction == Direction.EAST:
+            return (source[0] + 1, source[1], 0, 0)
+        elif direction == Direction.WEST:
+            return (source[0] - 1, source[1], 0, 0)
+        elif direction == Direction.SOUTH:
+            return (source[0], source[1] - 1, 0, 0)
+        elif direction == Direction.LOCAL0:
+            return (source[0], source[1], 0, 0)
+        elif direction == Direction.LOCAL1:
+            return (source[0], source[1], 0, 1)
+        elif direction == Direction.LOCAL2:
+            return (source[0], source[1], 1, 0)
+        elif direction == Direction.LOCAL3:
+            return (source[0], source[1], 1, 1)
+
+    def __check_packet_forwarding_to(
+        self,
+        crossbar: Crossbar8x8,
+        router_loc: tuple[int, int],
+        source_loc: tuple[int, int],
+        direction: Direction,
+    ):
+        self.__push_all_recipient_ready(crossbar)
+
+        dest_coord = self.__create_destination_coordinate(router_loc, direction)
+        packet = self.__create_spike_packet(source_loc, dest_coord)
+
+        self.assertTrue(crossbar.push_packet(packet, direction))
+        self.__check_outgoing_packet_of(crossbar, direction, packet)
+
+        crossbar.update()
+        crossbar.commit()
+
+    def __check_outgoing_packet_of(
+        self,
+        crossbar: Crossbar8x8,
+        direction: Direction,
+        expected_packet: Packet | None,
+    ):
+        for dir in Direction:
+            if dir == direction:
+                self.assertEqual(crossbar.get_outbound_packet_of(dir), expected_packet)
+            else:
+                self.assertEqual(crossbar.get_outbound_packet_of(dir), None)
+
+    def test_crossbar_one_request_going_one_recipient_once_should_be_forwarded_correctly(
+        self,
+    ):
+        router_loc = Coordinate(UInt(4, 2), UInt(4, 2))
+        crossbar = Crossbar8x8(router_loc)
+
+        # (2, 1) -> (2, 3), with locals all (0, 0)
+        packet = Packet.create_spike_packet(4, (2, 1, 0, 0), (2, 3, 0, 0), 0)
+
+        # Scenario: Recipient is ready, requster fires a request.
+        # Expected to forward packet SOUTH -> NORTH at the same cycle.
+        self.assertTrue(crossbar.push_ready(Direction.NORTH))
+        self.assertTrue(crossbar.push_packet(packet, Direction.SOUTH))
+        self.__check_outgoing_packet_of(crossbar, Direction.NORTH, packet)
+
+    def test_crossbar_request_stalls_if_recipient_is_not_ready_in_given_cycle(self):
+        router_loc = Coordinate(UInt(4, 2), UInt(4, 2))
+        crossbar = Crossbar8x8(router_loc)
+
+        # (2, 1) -> (2, 3)
+        packet = Packet.create_spike_packet(4, (2, 1, 0, 0), (2, 3, 0, 0), 0)
+
+        # Scenario: Recipient is NOT ready, requester fires a request.
+        # Expected NOT to forward packet SOUTH -> NORTH, until recipient is ready.
+        self.assertTrue(crossbar.push_packet(packet, Direction.SOUTH))
+        self.assertEqual(crossbar.get_outbound_packet_of(Direction.NORTH), None)
+
+        crossbar.update()
+        crossbar.commit()
+
+        # No transactions were made, means it's stalled.
+        self.assertFalse(crossbar.push_packet(packet, Direction.SOUTH))
+        self.assertTrue(crossbar.push_ready(Direction.NORTH))
+        self.__check_outgoing_packet_of(crossbar, Direction.NORTH, packet)
+
+        crossbar.update()
+        crossbar.commit()
+
+        self.assertEqual(crossbar.get_outbound_packet_of(Direction.NORTH), None)
+
+    def test_crossbar_request_stalls_if_it_was_not_granted_in_given_cycle(self):
+        router_loc = Coordinate(UInt(4, 2), UInt(4, 2))
+        crossbar = Crossbar8x8(router_loc)
+
+        # Scenario: Recipient is ready and two requesters are competing to
+        # fire their request to identical receiver. Let's say these come
+        # from router (2, 1) and 0-th neuron at router (2, 2).
+        packet = Packet.create_spike_packet(4, (2, 1, 0, 0), (2, 3, 0, 0), 0)
+        another_packet = Packet.create_spike_packet(4, (2, 2, 0, 0), (2, 3, 0, 0), 0)
+
+        self.assertTrue(crossbar.push_ready(Direction.NORTH))
+        self.assertTrue(crossbar.push_packet(packet, Direction.SOUTH))
+        self.assertTrue(crossbar.push_packet(another_packet, Direction.LOCAL0))
+
+        # Cardinal ones go first, then local.
+        self.__check_outgoing_packet_of(crossbar, Direction.NORTH, packet)
+        crossbar.update()
+        crossbar.commit()
+
+        # Local 0 didn't make it last turn, so left stalled
+        self.assertTrue(crossbar.push_ready(Direction.NORTH))
+        self.assertFalse(crossbar.push_packet(another_packet, Direction.LOCAL0))
+
+        # Local
+        self.__check_outgoing_packet_of(crossbar, Direction.NORTH, another_packet)
+        crossbar.update()
+        crossbar.commit()
+
+        self.assertTrue(crossbar.push_ready(Direction.NORTH))
+        self.assertEqual(crossbar.get_outbound_packet_of(Direction.NORTH), None)
+
+    def test_router_forward_packets_according_to_XY_routing_scheme(
+        self,
+    ):
+        router_loc = Coordinate(UInt(4, 2), UInt(4, 2))
+        crossbar = Crossbar8x8(router_loc)
+
+        # Scenario: Recipient is ready and requster and recipient
+        # are placed diagnoally; that is, two path is possible:
+        # NORTH and EAST as it's going from (2, 1) to (3, 3).
+        packet = Packet.create_spike_packet(4, (2, 1, 0, 0), (3, 3, 0, 0), 0)
+
+        # According to sNPU Architecture, when shipping packet through
+        # cardinal direction it should follow fixed priority:
+        # East > West > North > South, where East has highest priority.
+        #
+        # However in this case we assume East was somehow blocked.
+        self.assertTrue(crossbar.push_ready(Direction.NORTH))
+        self.assertTrue(crossbar.push_packet(packet, Direction.SOUTH))
+
+        # No port should be forwarding any incoming packets.
+        self.__check_outgoing_packet_of(crossbar, Direction.NORTH, None)
+
+        crossbar.update()
+        crossbar.commit()
+
+        # After that, assuming two paths are now available again.
+        # According to XY routing, packet must go through east,
+        # not north.
+        self.assertTrue(crossbar.push_ready(Direction.NORTH))
+        self.assertTrue(crossbar.push_ready(Direction.EAST))
+        self.__check_outgoing_packet_of(crossbar, Direction.EAST, packet)
+
+        crossbar.update()
+        crossbar.commit()
+
+        self.assertEqual(crossbar.get_outbound_packet_of(Direction.EAST), None)
+
+    def test_crossbar_one_request_going_multiple_recipient_through_cardinal_direction_should_be_forwarded_correctly(
+        self,
+    ):
+        router_loc = (2, 2)
+        rloc = Coordinate(UInt(4, router_loc[0]), UInt(4, router_loc[1]))
+        crossbar = Crossbar8x8(rloc)
+
+        # Scenario: All recipient is ready, requester fires a request toward EVERY recipient.
+        # Expected to forward packet SOUTH -> NORTH/EAST/WEST/SOUTH
+        # throughout the 8 cycles.
+        for direction in Direction.cardinal_directions():
+            coord = self.__create_destination_coordinate(router_loc, direction)
+
+            # Re-mapping because original has 4 element, but this needs only 2
+            requester_loc = (coord[0], coord[1])
+            self.__check_packet_forwarding_to(
+                crossbar, router_loc, requester_loc, direction
+            )
+
+    def test_crossbar_one_request_going_multiple_recipient_toward_local_should_be_forwarded_correctly(
+        self,
+    ):
+        router_loc = (2, 2)
+        rloc = Coordinate(UInt(4, router_loc[0]), UInt(4, router_loc[1]))
+        crossbar = Crossbar8x8(rloc)
+
+        # Scenario: All recipient is ready, requester fires a request toward EVERY recipient.
+        # Expected to forward packet SELF -> LOCAL0/LOCAL1/LOCAL2/LOCAL3
+        # throughout the 8 cycles.
+        requester_loc = (2, 2)
+        for direction in Direction.local_directions():
+            self.__check_packet_forwarding_to(
+                crossbar, router_loc, requester_loc, direction
+            )
+
+    def test_crossbar_one_request_going_identical_recipient_multiple_times_should_be_forwarded_correctly(
+        self,
+    ):
+        router_loc = (2, 2)
+        rloc = Coordinate(UInt(4, router_loc[0]), UInt(4, router_loc[1]))
+        crossbar = Crossbar8x8(rloc)
+
+        # Scenario: Recipient is ready all the time, requester fires packet
+        # to identical recipient repeatedly.
+
+        # Repeat firing request to identical spot 8 times. see if it works as intended.
+        requester_loc = (2, 3)
+        for direction in Direction:
+            for _ in range(8):
+                self.__check_packet_forwarding_to(
+                    crossbar, router_loc, requester_loc, direction
+                )
+
+    def test_crossbar_multiple_request_going_one_recipient_once_should_be_forwarded_correctly(
+        self,
+    ):
+        router_loc = (2, 2)
+        rloc = Coordinate(UInt(4, router_loc[0]), UInt(4, router_loc[1]))
+        crossbar = Crossbar8x8(rloc)
+
+        # Scenario: A recipient is ready. EVERY requesters fire a request toward a recipient.
+        # Expected to forward packet NORTH/EAST/WEST/SOUTH/LOCAL0/LOCAL1/LOCAL2/LOCAL3 -> EAST
+        # throughout the 8 cycles.
+
+        def push_all_request_packets(
+            router_loc: tuple[int, int],
+            recipient_loc: tuple[int, int, int, int],
+            from_direction: Direction,
+        ) -> Packet:
+            source_loc = self.__create_destination_coordinate(
+                router_loc, from_direction
+            )
+            packet = self.__create_spike_packet(
+                (source_loc[0], source_loc[1]), recipient_loc
+            )
+            self.assertTrue(crossbar.push_packet(packet, from_direction))
+
+            return packet
+
+        recipient_loc = (3, 2, 0, 0)
+
+        generated_packets = []
+        for dir in Direction:
+            generated_packets.append(
+                push_all_request_packets(router_loc, recipient_loc, dir)
+            )
+
+        for dir in Direction:
+            self.assertTrue(crossbar.push_ready(Direction.EAST))
+            self.assertEqual(
+                crossbar.get_outbound_packet_of(Direction.EAST),
+                generated_packets[dir],
+            )
+            crossbar.update()
+            crossbar.commit()
+
+    def test_crossbar_multiple_request_going_multiple_recipients_once_should_be_forwarded_correctly(
+        self,
+    ):
+        router_loc = (2, 2)
+        rloc = Coordinate(UInt(4, router_loc[0]), UInt(4, router_loc[1]))
+        crossbar = Crossbar8x8(rloc)
+
+        # Scenario: Every recipient is ready. Every requester
+        # fires a request toward themselves, resembling
+        # a massive autapse.
+
+        self.__push_all_recipient_ready(crossbar)
+
+        for dir in Direction:
+            dest_coord = self.__create_destination_coordinate(router_loc, dir)
+            packet = self.__create_spike_packet(
+                (dest_coord[0], dest_coord[1]), dest_coord
+            )
+            self.assertTrue(crossbar.push_packet(packet, dir))
+            self.assertEqual(crossbar.get_outbound_packet_of(dir), packet)
+
+        crossbar.update()
+        crossbar.commit()
+
+        for dir in Direction:
+            self.assertEqual(crossbar.get_outbound_packet_of(dir), None)
 
 
 class ChronosRoundRobinArbiterUnitTests(unittest.TestCase):

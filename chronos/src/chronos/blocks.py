@@ -521,14 +521,22 @@ class NeuronCore(SequentialModule):
 
 # A direction, encoded with priority.
 class Direction(IntEnum):
-    NORTH = 0
-    EAST = 1
-    SOUTH = 2
-    WEST = 3
+    EAST = 0
+    WEST = 1
+    NORTH = 2
+    SOUTH = 3
     LOCAL0 = 4
     LOCAL1 = 5
     LOCAL2 = 6
     LOCAL3 = 7
+
+    @classmethod
+    def cardinal_directions(cls) -> set["Direction"]:
+        return {cls.EAST, cls.WEST, cls.NORTH, cls.SOUTH}
+
+    @classmethod
+    def local_directions(cls) -> set["Direction"]:
+        return {cls.LOCAL0, cls.LOCAL1, cls.LOCAL2, cls.LOCAL3}
 
 
 # This is a combinatorial sub-block.
@@ -636,6 +644,117 @@ class RoundRobinArbiter(SequentialModule):
         self.__update_grant()
 
 
+# The flow is fully combinatorial, but arbiter changes its
+# state throughout the time. To maintain hierarchy I marked
+# crossbar as a SequentialModule as well.
+class Crossbar8x8(SequentialModule):
+    __decoders: list[Decoder]
+    __arbiters: list[RoundRobinArbiter]
+
+    __inbound_packets: list[Packet | None]
+    __outbound_packets: list[Packet | None]
+
+    __requests: set[Direction]
+    __readys: set[Direction]
+
+    __transacted_map: dict[Direction, Direction]
+
+    def __init__(self, router_loc: Coordinate):
+        self.__decoders = [Decoder(router_loc) for _ in Direction]
+        self.__arbiters = [RoundRobinArbiter() for _ in Direction]
+
+        self.__inbound_packets = [None for _ in Direction]
+        self.__outbound_packets = [None for _ in Direction]
+
+        self.__readys = set()
+        self.__requests = set()
+
+        self.reset()
+
+    def get_outbound_packet_of(self, from_direction: Direction) -> Packet | None:
+        return self.__outbound_packets[from_direction]
+
+    def push_packet(self, packet: Packet, from_direction: Direction) -> bool:
+        if from_direction in self.__requests:
+            return False
+
+        self.__requests.add(from_direction)
+        self.__inbound_packets[from_direction] = packet
+        self.__update_outbound_packet()
+        return True
+
+    def push_ready(self, from_direction: Direction) -> bool:
+        self.__readys.add(from_direction)
+        self.__update_outbound_packet()
+        return True
+
+    def __update_outbound_packet(self):
+        granted_map: dict[Direction, Direction] = dict()
+        decoded_map: dict[Direction, Direction] = dict()
+
+        # Given packets from each ingress port, decode first
+        for incoming_request in self.__requests:
+            packet = self.__inbound_packets[incoming_request]
+            assert packet is not None
+
+            decoded_vector = self.__decoders[incoming_request].decode(
+                packet.destination_location
+            )
+            assert len(decoded_vector) > 0
+
+            # Pick up the first one, based on priority.
+            decoded = min(decoded_vector)
+            self.__arbiters[decoded].put_request_from_direction(incoming_request)
+            decoded_map[incoming_request] = decoded
+
+        # And from arbiters, use grant to gate upstream ready.
+        # Iterating ready set is enough as grant without ready
+        # is effectively equivalent to "Don't pass".
+        for incoming_ready in self.__readys:
+            granted = self.__arbiters[incoming_ready].grant
+
+            if granted is not None:
+                granted_map[incoming_ready] = granted
+
+        # From requester's perspective (since they cannot be withdrawn)
+        # if they got a corresponding grant, forward their packet to
+        # specified destination.
+        for requester_dir, decoded_dir in decoded_map.items():
+            if decoded_dir not in granted_map:
+                continue
+            if granted_map[decoded_dir] != requester_dir:
+                continue
+
+            self.__transacted_map[decoded_dir] = requester_dir
+            self.__outbound_packets[decoded_dir] = self.__inbound_packets[requester_dir]
+
+    def reset(self):
+        for arbiter in self.__arbiters:
+            arbiter.reset()
+
+        self.__transacted_map = dict()
+
+    def update(self):
+        for arbiter in self.__arbiters:
+            arbiter.update()
+
+    def commit(self):
+        for arbiter in self.__arbiters:
+            arbiter.commit()
+
+        # Nullify every outgoing packets, effectively make them
+        # start over. This is to emulate data being invalid
+        # after successful VALID-READY transaction.
+        for direction in Direction:
+
+            # Drop corresponding VALID-READY.
+            if direction in self.__transacted_map:
+                granted_input = self.__transacted_map[direction]
+                self.__readys.remove(direction)
+                self.__requests.remove(granted_input)
+            self.__outbound_packets[direction] = None
+
+        self.__transacted_map = dict()
 
 
 class Router(SequentialModule):
