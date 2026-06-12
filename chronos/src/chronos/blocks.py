@@ -4,7 +4,13 @@ from enum import IntEnum
 from random import randint
 
 from chronos.hardware_types import Q4_12, UInt
-from chronos.packets import Coordinate, EventPayloadFormat, Opcode, Packet
+from chronos.packets import (
+    Coordinate,
+    EventPayloadFormat,
+    Opcode,
+    Packet,
+    NeuronLocation,
+)
 from chronos.utils import BitFieldExtractor
 
 
@@ -197,22 +203,6 @@ class NeuronParameter:
     neuron_addr_width: int
     spike_threshold: Q4_12
     max_fanout_spike_capacity: int
-
-
-@dataclass(frozen=True)
-class NeuronLocation:
-    position: Coordinate
-    local_position: Coordinate
-
-    def to_uint(self) -> UInt:
-        pos_as_uint = self.position.to_uint()
-        local_pos_as_uint = self.local_position.to_uint()
-        concated_width = self.position.width + self.local_position.width
-
-        return UInt(
-            concated_width,
-            local_pos_as_uint.value << self.position.width + pos_as_uint.value,
-        )
 
 
 class SecondOrderShiftDecay:

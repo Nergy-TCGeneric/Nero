@@ -9,7 +9,6 @@ sys.path.append(str(Path(__file__).parent.parent / "src"))
 from chronos.blocks import (
     BoundedRAM,
     Counter,
-    NeuronLocation,
     NeuronParameter,
     PacketSequencer,
     Decoder,
@@ -19,7 +18,7 @@ from chronos.blocks import (
     MembranePotentialUpdater,
 )
 from chronos.hardware_types import Q4_12, UInt
-from chronos.packets import EventPayloadFormat, Coordinate, Opcode
+from chronos.packets import EventPayloadFormat, Coordinate, Opcode, NeuronLocation
 
 
 class ChronosQ4_12UnitTests(unittest.TestCase):

@@ -35,6 +35,22 @@ class Coordinate:
         return self.x.width + self.y.width
 
 
+@dataclass(frozen=True)
+class NeuronLocation:
+    position: Coordinate
+    local_position: Coordinate
+
+    def to_uint(self) -> UInt:
+        pos_as_uint = self.position.to_uint()
+        local_pos_as_uint = self.local_position.to_uint()
+        concated_width = self.position.width + self.local_position.width
+
+        return UInt(
+            concated_width,
+            local_pos_as_uint.value << self.position.width + pos_as_uint.value,
+        )
+
+
 # Refer sNPU Architecture, 7. Event and Response
 # Bit field for details.
 @dataclass(frozen=True)
