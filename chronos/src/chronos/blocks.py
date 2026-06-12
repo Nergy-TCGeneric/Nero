@@ -577,12 +577,17 @@ class Decoder:
         return available
 
 
+# Arbiter is a mix of combinatorial part and
+# sequential one(mask register). Grant is
+# computed immediately as soon as request
+# or mask was changed.
 class RoundRobinArbiter(SequentialModule):
     __grant: Direction | None
-    __next_grant: Direction | None
+
+    __mask: Direction | None
+    __next_mask: Direction | None
 
     __pending_requests: set[Direction]
-    __next_pending_requests: set[Direction]
 
     def __init__(self):
         self.reset()
@@ -593,34 +598,42 @@ class RoundRobinArbiter(SequentialModule):
 
     def reset(self):
         self.__grant = None
-        self.__next_grant = None
         self.__pending_requests = set()
-        self.__next_pending_requests = set()
+        self.__mask = None
+        self.__next_mask = None
 
     def put_request_from_direction(self, direction: Direction) -> bool:
         if direction in self.__pending_requests:
             return False
 
         self.__pending_requests.add(direction)
+        self.__update_grant()
         return True
+
+    def __update_grant(self):
+        if self.__mask is None:
+            self.__grant = min(self.__pending_requests, default=None)
+        else:
+            self.__grant = min(
+                (req for req in self.__pending_requests if req > self.__mask),
+                default=min(self.__pending_requests, default=None),
+            )
 
     def update(self):
         # Whole comparison is based on their priority.
-        if self.__grant is None:
-            self.__next_grant = min(self.__pending_requests, default=None)
+        if self.__mask is None:
+            self.__next_mask = min(self.__pending_requests, default=None)
         else:
             # Wrap to lowest one if none of requests can be granted with this state.
-            self.__next_grant = min(
-                (req for req in self.__pending_requests if req > self.__grant),
+            self.__next_mask = min(
+                (req for req in self.__pending_requests if req > self.__mask),
                 default=min(self.__pending_requests, default=None),
             )
-        self.__next_pending_requests = self.__pending_requests.difference(
-            {self.__next_grant}
-        )
 
     def commit(self):
-        self.__grant = self.__next_grant
-        self.__pending_requests = self.__next_pending_requests
+        self.__mask = self.__next_mask
+        self.__pending_requests = set()
+        self.__update_grant()
 
 
 

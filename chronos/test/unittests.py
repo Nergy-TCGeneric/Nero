@@ -309,12 +309,9 @@ class ChronosRoundRobinArbiterUnitTests(unittest.TestCase):
 
         self.assertEqual(arbiter.grant, None)
 
-    def test_arbiter_should_grant_incoming_request_at_next_cycle(self):
+    def test_arbiter_should_grant_incoming_request_at_same_cycle(self):
         arbiter = RoundRobinArbiter()
         arbiter.put_request_from_direction(Direction.NORTH)
-
-        arbiter.update()
-        arbiter.commit()
         self.assertEqual(arbiter.grant, Direction.NORTH)
 
         arbiter.update()
@@ -325,15 +322,17 @@ class ChronosRoundRobinArbiterUnitTests(unittest.TestCase):
         arbiter = RoundRobinArbiter()
 
         # Push all and see if they're all eventually granted, one by one.
-        for direction in Direction:
-            arbiter.put_request_from_direction(direction)
+        def pack_all_requests(arbiter: RoundRobinArbiter):
+            for direction in Direction:
+                self.assertTrue(arbiter.put_request_from_direction(direction))
 
         def check_grant_at(arbiter: RoundRobinArbiter, direction: Direction):
+            self.assertEqual(arbiter.grant, direction)
             arbiter.update()
             arbiter.commit()
-            self.assertEqual(arbiter.grant, direction)
 
         for direction in Direction:
+            pack_all_requests(arbiter)
             check_grant_at(arbiter, direction)
 
         arbiter.update()
@@ -347,20 +346,24 @@ class ChronosRoundRobinArbiterUnitTests(unittest.TestCase):
         arbiter.put_request_from_direction(Direction.NORTH)
         arbiter.put_request_from_direction(Direction.SOUTH)
 
+        self.assertEqual(arbiter.grant, Direction.NORTH)
         arbiter.update()
         arbiter.commit()
-        self.assertEqual(arbiter.grant, Direction.NORTH)
 
-        # Push north request once again and see if it's not selected at next cycle.
+        arbiter.put_request_from_direction(Direction.NORTH)
+        arbiter.put_request_from_direction(Direction.SOUTH)
+
+        self.assertEqual(arbiter.grant, Direction.SOUTH)
+        arbiter.update()
+        arbiter.commit()
+
         arbiter.put_request_from_direction(Direction.NORTH)
 
-        arbiter.update()
-        arbiter.commit()
-        self.assertEqual(arbiter.grant, Direction.SOUTH)
-
-        arbiter.update()
-        arbiter.commit()
         self.assertEqual(arbiter.grant, Direction.NORTH)
+        arbiter.update()
+        arbiter.commit()
+
+        self.assertEqual(arbiter.grant, None)
 
     def test_arbiter_should_reject_putting_multiple_identical_request_at_once(self):
         arbiter = RoundRobinArbiter()
