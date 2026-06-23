@@ -489,7 +489,7 @@ class ChronosDecoderUnitTests(unittest.TestCase):
         decoder = Decoder(router_loc)
 
         dest_neuron_loc = Coordinate(UInt(4, 2), UInt(4, 2))
-        dest_local_loc = Coordinate(UInt(1, 1), UInt(1, 0))
+        dest_local_loc = Coordinate(UInt(1, 0), UInt(1, 1))
         dest_loc = NeuronLocation(dest_neuron_loc, dest_local_loc)
 
         expected = {Direction.LOCAL1}
@@ -500,7 +500,7 @@ class ChronosDecoderUnitTests(unittest.TestCase):
         decoder = Decoder(router_loc)
 
         dest_neuron_loc = Coordinate(UInt(4, 2), UInt(4, 2))
-        dest_local_loc = Coordinate(UInt(1, 0), UInt(1, 1))
+        dest_local_loc = Coordinate(UInt(1, 1), UInt(1, 0))
         dest_loc = NeuronLocation(dest_neuron_loc, dest_local_loc)
 
         expected = {Direction.LOCAL2}

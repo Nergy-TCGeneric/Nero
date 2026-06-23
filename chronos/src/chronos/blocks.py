@@ -553,12 +553,12 @@ class Decoder:
             ) and dest_local_loc.y == UInt(dest_local_loc.width, 0):
                 available.add(Direction.LOCAL0)
             elif dest_local_loc.x == UInt(
-                dest_local_loc.width, 1
-            ) and dest_local_loc.y == UInt(dest_local_loc.width, 0):
-                available.add(Direction.LOCAL1)
-            elif dest_local_loc.x == UInt(
                 dest_local_loc.width, 0
             ) and dest_local_loc.y == UInt(dest_local_loc.width, 1):
+                available.add(Direction.LOCAL1)
+            elif dest_local_loc.x == UInt(
+                dest_local_loc.width, 1
+            ) and dest_local_loc.y == UInt(dest_local_loc.width, 0):
                 available.add(Direction.LOCAL2)
             elif dest_local_loc.x == UInt(
                 dest_local_loc.width, 1
