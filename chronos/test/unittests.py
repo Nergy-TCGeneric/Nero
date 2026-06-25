@@ -8,6 +8,7 @@ sys.path.append(str(Path(__file__).parent.parent / "src"))
 
 from chronos.blocks import (
     BoundedRAM,
+    BoundedQueue,
     Counter,
     NeuronParameter,
     PacketSequencer,
@@ -262,22 +263,65 @@ class ChronosBoundedRAMUnitTests(unittest.TestCase):
 
 class ChronosBoundedQueueUnitTests(unittest.TestCase):
     def test_queue_rejects_non_positive_depth(self):
-        pass
+        with self.assertRaises(ValueError):
+            BoundedQueue(-1, 1)
+        with self.assertRaises(ValueError):
+            BoundedQueue(0, 1)
+
+    def test_queue_rejects_non_positive_bit_width(self):
+        with self.assertRaises(ValueError):
+            BoundedQueue(1, -1)
+        with self.assertRaises(ValueError):
+            BoundedQueue(1, 0)
 
     def test_queue_rejects_incoming_data_with_different_bitwidth(self):
-        pass
+        queue = BoundedQueue(2, 1)
+        with self.assertRaises(ValueError):
+            queue.push(UInt(2, 1))
 
     def test_enqueue_operation_increases_queue_element_count(self):
-        pass
+        queue = BoundedQueue(2, 4)
+        self.assertEqual(queue.size, 0)
+
+        queue.push(UInt(4, 1))
+        queue.update()
+        queue.commit()
+
+        self.assertEqual(queue.size, 1)
 
     def test_enqueue_return_failure_if_queue_is_full(self):
-        pass
+        queue = BoundedQueue(1, 4)
+
+        self.assertTrue(queue.push(UInt(4, 1)))
+        queue.update()
+        queue.commit()
+
+        self.assertFalse(queue.push(UInt(4, 1)))
 
     def test_dequeue_operation_decreases_queue_element_count(self):
-        pass
+        queue = BoundedQueue(1, 4)
+        expected = UInt(4, 1)
+
+        self.assertTrue(queue.push(expected))
+
+        queue.update()
+        queue.commit()
+        self.assertEqual(queue.size, 1)
+
+        popped_result = queue.pop()
+        self.assertTrue(popped_result[0])
+        self.assertEqual(popped_result[1], expected)
+
+        queue.update()
+        queue.commit()
+        self.assertEqual(queue.size, 0)
 
     def test_dequeue_return_failiure_if_queue_is_empty(self):
-        pass
+        queue = BoundedQueue(1, 4)
+        self.assertEqual(queue.size, 0)
+
+        popped_result = queue.pop()
+        self.assertFalse(popped_result[0])
 
 
 class ChronosRouterBlockUnitTests(unittest.TestCase):

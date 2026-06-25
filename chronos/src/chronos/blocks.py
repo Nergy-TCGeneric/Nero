@@ -151,49 +151,135 @@ class BoundedRAM(SequentialModule):
         pass
 
 
-# TODO: Can be implemented with BoundedRAM later.
-class BoundedQueue:
+# A chisel queue with default option.
+class BoundedQueue(SequentialModule):
+    # Update-dependent values
+    __next_head: int
+    __head: int
+
+    __next_tail: int
+    __tail: int
+
+    __next_maybe_full: bool
+    __maybe_full: bool
+
+    # Runtime values
     __capacity: int
     __items: list[UInt]
 
-    def __init__(self, capacity=4):
+    __is_empty: bool
+    __is_full: bool
+
+    __is_pushing: bool
+    __is_popping: bool
+
+    def __init__(self, capacity: int, bit_width: int):
         if capacity <= 0:
             raise ValueError(
                 f"Only non-negative capacity is valid for queue, but got : {capacity}"
             )
-        self.__capacity = capacity
-        self.__items = []
 
-    @property
-    def size(self) -> int:
-        return len(self.__items)
+        self.__capacity = capacity
+
+        # randint() can produce float when bit_width is less than 0.
+        effective_bit_width = max(bit_width, 0)
+        self.__items = [
+            UInt(bit_width, randint(0, 2**effective_bit_width - 1))
+        ] * capacity
+
+        self.reset()
 
     @property
     def capacity(self) -> int:
         return self.__capacity
 
-    def __ensure_identical_bit_width(self):
-        if len(self.__items) == 0:
-            return
+    @property
+    def size(self) -> int:
+        ptr_diff = abs(self.__head - self.__tail)
+        if self.__head == self.__tail:
+            return self.__capacity if self.__maybe_full else 0
+        else:
+            return (
+                (self.__capacity + ptr_diff) % self.__capacity
+                if self.__tail > self.__head
+                else ptr_diff
+            )
 
-        bit_width = self.__items[0].width
+    @property
+    def empty(self) -> bool:
+        return self.__is_empty
+
+    @property
+    def full(self) -> bool:
+        return self.__is_full
+
+    def __ensure_identical_bit_width(self, incoming: UInt):
         for uint in self.__items:
-            if bit_width != uint.width:
+            if incoming.width != uint.width:
                 raise ValueError(
-                    f"UInt bit widths are different, expected {bit_width} but found {uint.width}."
+                    f"UInt bit widths are different. Expected {uint.width} but found {incoming.width}."
                 )
 
     def push(self, data: UInt) -> bool:
-        self.__ensure_identical_bit_width()
-        if self.size >= self.capacity:
+        if self.__is_full:
             return False
-        self.__items.append(data)
+
+        self.__ensure_identical_bit_width(data)
+
+        self.__next_head = (self.__head + 1) % self.__capacity
+        self.__items[self.__head] = data
+        self.__is_pushing = True
+
+        self.__update_signals()
+
         return True
 
-    def pop(self) -> tuple[bool, UInt | None]:
-        if self.size == 0:
-            return (False, None)
-        return (True, self.__items.pop())
+    def pop(self) -> tuple[bool, UInt]:
+        item_at_tail = self.__items[self.__tail]
+        if self.__is_empty:
+            return (False, item_at_tail)  # Value is useless when empty
+
+        self.__next_tail = (self.__tail + 1) % self.__capacity
+        self.__is_popping = True
+
+        self.__update_signals()
+
+        return (True, item_at_tail)
+
+    def update(self):
+        pass
+
+    def commit(self):
+        self.__head = self.__next_head
+        self.__tail = self.__next_tail
+        self.__maybe_full = self.__next_maybe_full
+        self.__is_pushing = False
+        self.__is_popping = False
+
+        self.__update_signals()
+
+    # Chisel Queue's status signals like full/empty are combinatorial.
+    def __update_signals(self):
+        if self.__is_pushing != self.__is_popping:
+            self.__next_maybe_full = self.__is_pushing
+        ptr_match = self.__head == self.__tail
+
+        self.__is_full = ptr_match & self.__maybe_full
+        self.__is_empty = ptr_match & (not self.__maybe_full)
+
+    def reset(self):
+        self.__head = 0
+        self.__next_head = 0
+        self.__tail = 0
+        self.__next_tail = 0
+        self.__is_empty = False
+        self.__is_full = False
+        self.__is_pushing = False
+        self.__is_popping = False
+        self.__next_maybe_full = False
+        self.__maybe_full = False
+
+        self.__update_signals()
 
 
 @dataclass(frozen=True)
@@ -746,7 +832,6 @@ class Crossbar8x8(SequentialModule):
         # start over. This is to emulate data being invalid
         # after successful VALID-READY transaction.
         for direction in Direction:
-
             # Drop corresponding VALID-READY.
             if direction in self.__transacted_map:
                 granted_input = self.__transacted_map[direction]
