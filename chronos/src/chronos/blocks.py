@@ -2,8 +2,9 @@ from dataclasses import dataclass
 from abc import ABC, abstractmethod
 from enum import IntEnum
 from random import randint
+from typing import TypeVar, Generic, cast, get_args
 
-from chronos.hardware_types import Q4_12, UInt
+from chronos.hardware_types import Q4_12, UInt, HasWidth
 from chronos.packets import (
     Coordinate,
     EventPayloadFormat,
@@ -152,7 +153,10 @@ class BoundedRAM(SequentialModule):
 
 
 # A chisel queue with default option.
-class BoundedQueue(SequentialModule):
+ElemType = TypeVar("ElemType", bound="HasWidth")
+
+
+class BoundedQueue(Generic[ElemType], SequentialModule):
     # Update-dependent values
     __next_head: int
     __head: int
@@ -165,7 +169,8 @@ class BoundedQueue(SequentialModule):
 
     # Runtime values
     __capacity: int
-    __items: list[UInt]
+    __defined_bit_width: int
+    __items: list[ElemType] | None
 
     __is_empty: bool
     __is_full: bool
@@ -175,19 +180,40 @@ class BoundedQueue(SequentialModule):
 
     def __init__(self, capacity: int, bit_width: int):
         if capacity <= 0:
-            raise ValueError(
-                f"Only non-negative capacity is valid for queue, but got : {capacity}"
-            )
+            raise ValueError(f"Capacity must be non-negative, but got : {capacity}")
+        if bit_width <= 0:
+            raise ValueError(f"Bit width must be non-negative, but got : {bit_width}")
 
         self.__capacity = capacity
+        self.__defined_bit_width = bit_width
 
-        # randint() can produce float when bit_width is less than 0.
-        effective_bit_width = max(bit_width, 0)
-        self.__items = [
-            UInt(bit_width, randint(0, 2**effective_bit_width - 1))
-        ] * capacity
-
+        # Content is not initialized until it's actually used.
+        # This is to automatically randomize contents, with provided
+        # generic type.
+        self.__items = None
         self.reset()
+
+    def __ensure_initialized(self) -> list[ElemType]:
+        if self.__items is not None:
+            return self.__items
+
+        orig_class = getattr(self, "__orig_class__", None)
+        if orig_class is None:
+            raise TypeError(
+                "BoundedQueue must be instantiated with an element type, "
+                "like BoundedQueue[UInt](...)."
+            )
+
+        args = get_args(orig_class)
+        if len(args) != 1:
+            raise TypeError("Unable to determine BoundedQueue element type.")
+
+        elem_type = cast(type[ElemType], args[0])
+        self.__items = [
+            elem_type.randomized(self.__defined_bit_width)
+            for _ in range(self.__capacity)
+        ]
+        return self.__items
 
     @property
     def capacity(self) -> int:
@@ -213,29 +239,31 @@ class BoundedQueue(SequentialModule):
     def full(self) -> bool:
         return self.__is_full
 
-    def __ensure_identical_bit_width(self, incoming: UInt):
-        for uint in self.__items:
-            if incoming.width != uint.width:
+    def __ensure_identical_bit_width(self, items: list[ElemType], incoming: ElemType):
+        for item in items:
+            if incoming.width != item.width:
                 raise ValueError(
-                    f"UInt bit widths are different. Expected {uint.width} but found {incoming.width}."
+                    f"Element bit widths are different. Expected {item.width} but found {incoming.width}."
                 )
 
-    def push(self, data: UInt) -> bool:
+    def push(self, data: ElemType) -> bool:
         if self.__is_full:
             return False
 
-        self.__ensure_identical_bit_width(data)
+        contents = self.__ensure_initialized()
+        self.__ensure_identical_bit_width(contents, data)
 
         self.__next_head = (self.__head + 1) % self.__capacity
-        self.__items[self.__head] = data
+        contents[self.__head] = data
         self.__is_pushing = True
 
         self.__update_signals()
 
         return True
 
-    def pop(self) -> tuple[bool, UInt]:
-        item_at_tail = self.__items[self.__tail]
+    def pop(self) -> tuple[bool, ElemType]:
+        contents = self.__ensure_initialized()
+        item_at_tail = contents[self.__tail]
         if self.__is_empty:
             return (False, item_at_tail)  # Value is useless when empty
 

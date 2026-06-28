@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
+from typing import Self
 
-from chronos.hardware_types import UInt
+from chronos.hardware_types import UInt, HasWidth
 from chronos.utils import BitFieldExtractor
 
 
@@ -9,7 +10,7 @@ class Opcode:
 
 
 @dataclass(frozen=True)
-class Coordinate:
+class Coordinate(HasWidth):
     x: UInt
     y: UInt
 
@@ -34,9 +35,15 @@ class Coordinate:
     def width(self) -> int:
         return self.x.width + self.y.width
 
+    @classmethod
+    def randomized(cls, width: int) -> Self:
+        uint_x = UInt.randomized(width)
+        uint_y = UInt.randomized(width)
+        return cls(uint_x, uint_y)
+
 
 @dataclass(frozen=True)
-class NeuronLocation:
+class NeuronLocation(HasWidth):
     position: Coordinate
     local_position: Coordinate
 
@@ -50,11 +57,21 @@ class NeuronLocation:
             local_pos_as_uint.value << self.position.width + pos_as_uint.value,
         )
 
+    @property
+    def width(self) -> int:
+        return self.position.width + self.local_position.width
+
+    @classmethod
+    def randomized(cls, width: int) -> Self:
+        pos = Coordinate.randomized(width)
+        local_pos = Coordinate.randomized(1)
+        return cls(pos, local_pos)
+
 
 # Refer sNPU Architecture, 7. Event and Response
 # Bit field for details.
 @dataclass(frozen=True)
-class ResponsePayloadFormat:
+class ResponsePayloadFormat(HasWidth):
     WIDTH = 24
 
     payload_valid: bool = False
@@ -88,11 +105,19 @@ class ResponsePayloadFormat:
     def width(self) -> int:
         return ResponsePayloadFormat.WIDTH
 
+    @classmethod
+    def randomized(cls, width: int) -> Self:
+        del width  # Both field has fixed width according to sNPU Architecture.
+
+        resp_uint = UInt.randomized(2)
+        payload_uint = UInt.randomized(16)
+        return cls(False, resp_uint, payload_uint)
+
 
 # Refer sNPU Architecture, 7. Event and Response
 # Bit field for details.
 @dataclass(frozen=True)
-class EventPayloadFormat:
+class EventPayloadFormat(HasWidth):
     WIDTH = 24
 
     event_type: UInt = field(default_factory=lambda: UInt(5))
@@ -124,9 +149,17 @@ class EventPayloadFormat:
     def width(self) -> int:
         return EventPayloadFormat.WIDTH
 
+    @classmethod
+    def randomized(cls, width: int) -> Self:
+        del width  # Both field has fixed width according to sNPU Architecture.
+
+        event_type = UInt.randomized(5)
+        payload_uint = UInt.randomized(16)
+        return cls(event_type, payload_uint)
+
 
 @dataclass(frozen=True)
-class Packet:
+class Packet(HasWidth):
     source: Coordinate
     destination: Coordinate
     source_local: Coordinate

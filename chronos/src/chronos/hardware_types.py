@@ -1,7 +1,22 @@
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from random import randint
+from typing import Self
 
 
-class Q4_12:
+class HasWidth(ABC):
+    @property
+    @abstractmethod
+    def width(self) -> int:
+        pass
+
+    @classmethod
+    @abstractmethod
+    def randomized(cls, width: int) -> Self:
+        pass
+
+
+class Q4_12(HasWidth):
     WIDTH = 16
     FRAC = 12
     SCALE = 1 << FRAC
@@ -17,6 +32,10 @@ class Q4_12:
         sign = 1 << (self.WIDTH - 1)
         return (x ^ sign) - sign
 
+    @property
+    def width(self) -> int:
+        return self.WIDTH
+
     @classmethod
     def from_float(cls, x: float):
         return cls(round(x * cls.SCALE))
@@ -24,6 +43,10 @@ class Q4_12:
     @classmethod
     def from_uint(cls, x: "UInt"):
         return cls(x.value)
+
+    @classmethod
+    def randomized(cls, width: int) -> Self:
+        return cls(randint(0, (1 << cls.WIDTH) - 1))
 
     def signed_raw(self) -> int:
         return self.__to_signed(self.raw)
@@ -70,14 +93,18 @@ class Q4_12:
 
 # N-bit unsigned int in hardware.
 @dataclass(frozen=True, slots=True)
-class UInt:
-    width: int
+class UInt(HasWidth):
+    bit_width: int
     raw: int = 0
 
     def __post_init__(self):
-        if self.width <= 0:
+        if self.bit_width <= 0:
             raise ValueError("UInt width must be positive.")
         object.__setattr__(self, "raw", self.raw & self.mask)
+
+    @property
+    def width(self) -> int:
+        return self.bit_width
 
     @property
     def value(self) -> int:
@@ -86,6 +113,10 @@ class UInt:
     @property
     def mask(self) -> int:
         return (1 << self.width) - 1
+
+    @classmethod
+    def randomized(cls, width: int) -> Self:
+        return cls(width, randint(0, (1 << width) - 1))
 
     # Any arithmetic operations must be done with identical width.
     # This is to ensure no stupid mistake, with an inconveneient tradeoff.

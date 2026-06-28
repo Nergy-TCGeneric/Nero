@@ -264,23 +264,23 @@ class ChronosBoundedRAMUnitTests(unittest.TestCase):
 class ChronosBoundedQueueUnitTests(unittest.TestCase):
     def test_queue_rejects_non_positive_depth(self):
         with self.assertRaises(ValueError):
-            BoundedQueue(-1, 1)
+            BoundedQueue[UInt](-1, 1)
         with self.assertRaises(ValueError):
-            BoundedQueue(0, 1)
+            BoundedQueue[UInt](0, 1)
 
     def test_queue_rejects_non_positive_bit_width(self):
         with self.assertRaises(ValueError):
-            BoundedQueue(1, -1)
+            BoundedQueue[UInt](1, -1)
         with self.assertRaises(ValueError):
-            BoundedQueue(1, 0)
+            BoundedQueue[UInt](1, 0)
 
     def test_queue_rejects_incoming_data_with_different_bitwidth(self):
-        queue = BoundedQueue(2, 1)
+        queue = BoundedQueue[UInt](2, 1)
         with self.assertRaises(ValueError):
             queue.push(UInt(2, 1))
 
     def test_enqueue_operation_increases_queue_element_count(self):
-        queue = BoundedQueue(2, 4)
+        queue = BoundedQueue[UInt](2, 4)
         self.assertEqual(queue.size, 0)
 
         queue.push(UInt(4, 1))
@@ -290,7 +290,7 @@ class ChronosBoundedQueueUnitTests(unittest.TestCase):
         self.assertEqual(queue.size, 1)
 
     def test_enqueue_return_failure_if_queue_is_full(self):
-        queue = BoundedQueue(1, 4)
+        queue = BoundedQueue[UInt](1, 4)
 
         self.assertTrue(queue.push(UInt(4, 1)))
         queue.update()
@@ -299,7 +299,7 @@ class ChronosBoundedQueueUnitTests(unittest.TestCase):
         self.assertFalse(queue.push(UInt(4, 1)))
 
     def test_dequeue_operation_decreases_queue_element_count(self):
-        queue = BoundedQueue(1, 4)
+        queue = BoundedQueue[UInt](1, 4)
         expected = UInt(4, 1)
 
         self.assertTrue(queue.push(expected))
@@ -317,7 +317,7 @@ class ChronosBoundedQueueUnitTests(unittest.TestCase):
         self.assertEqual(queue.size, 0)
 
     def test_dequeue_return_failiure_if_queue_is_empty(self):
-        queue = BoundedQueue(1, 4)
+        queue = BoundedQueue[UInt](1, 4)
         self.assertEqual(queue.size, 0)
 
         popped_result = queue.pop()
