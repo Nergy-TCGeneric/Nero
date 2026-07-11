@@ -14,6 +14,7 @@ from chronos.blocks import (
     PacketSequencer,
     Decoder,
     Crossbar8x8,
+    Router,
     Direction,
     RoundRobinArbiter,
     SecondOrderShiftDecay,
@@ -325,14 +326,43 @@ class ChronosBoundedQueueUnitTests(unittest.TestCase):
 
 
 class ChronosRouterBlockUnitTests(unittest.TestCase):
-    def test_router_enqueue_becomes_visible_after_1_cycle(self):
-        pass
+    def test_router_enqueued_request_eventually_becomes_visible(self):
+        param = NeuronParameter(0, 0, 4, Q4_12.from_float(1.0))
+        router_loc = Coordinate(
+            UInt(param.neuron_addr_width, 2), UInt(param.neuron_addr_width, 2)
+        )
 
-    def test_router_dequeue_completes_after_1_cycle(self):
-        pass
+        router = Router(router_loc, param)
+        packet = Packet.create_spike_packet(
+            param.neuron_addr_width, (3, 2, 0, 0), (1, 2, 0, 0), 0
+        )
+        router.push_packet_from(packet, Direction.EAST)
 
-    def test_router_buffers_up_to_4_entries(self):
-        pass
+        REPETITION_LIMIT = 128
+        observed_packet: Packet | None = None
+
+        for _ in range(REPETITION_LIMIT):
+            router.update()
+            router.commit()
+
+            result = router.pop_packet_from(Direction.WEST)
+            if result[0] is True:
+                observed_packet = result[1]
+                break
+
+        if observed_packet is not None:
+            self.assertEqual(observed_packet, packet)
+        else:
+            self.fail("Input packet didn't arrive at expected destination.")
+
+    def test_router_buffers_up_to_specified_entries(self):
+        param = NeuronParameter(0, 0, 4, Q4_12.from_float(1.0), buffer_depth=2)
+        router_loc = Coordinate(
+            UInt(param.neuron_addr_width, 2), UInt(param.neuron_addr_width, 2)
+        )
+
+        router = Router(router_loc, param)
+        # TODO: Code goes here, 2026-07-12
 
     def test_router_prefers_north_south_west_east_when_multiple_routes_exist(
         self,

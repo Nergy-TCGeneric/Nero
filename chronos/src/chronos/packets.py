@@ -182,15 +182,11 @@ class Packet(HasWidth):
             UInt(addr_width, source_loc[0]),
             UInt(addr_width, source_loc[1]),
         )
-        src_local_loc = Coordinate(
-            UInt(addr_width, source_loc[2]), UInt(addr_width, source_loc[3])
-        )
+        src_local_loc = Coordinate(UInt(1, source_loc[2]), UInt(1, source_loc[3]))
         dst_loc = Coordinate(
             UInt(addr_width, dest_loc[0]), UInt(addr_width, dest_loc[1])
         )
-        dst_local_loc = Coordinate(
-            UInt(addr_width, dest_loc[2]), UInt(addr_width, dest_loc[3])
-        )
+        dst_local_loc = Coordinate(UInt(1, dest_loc[2]), UInt(1, dest_loc[3]))
         stamp = UInt(8, timestamp)
         format = EventPayloadFormat(Opcode.SPIKE)
 
@@ -255,3 +251,17 @@ class Packet(HasWidth):
             + self.timestamp.width
             + EventPayloadFormat.WIDTH
         )
+
+    @classmethod
+    def randomized(cls, width: int) -> Self:
+        source = Coordinate.randomized(width)
+        dest = Coordinate.randomized(width)
+        source_local = Coordinate.randomized(1)
+        dest_local = Coordinate.randomized(1)
+        timestamp = UInt.randomized(16)
+        format = EventPayloadFormat.randomized(24)
+        return cls(source, dest, source_local, dest_local, timestamp, format)
+
+    @classmethod
+    def get_width_with(cls, addr_width: int, timestamp_width: int) -> int:
+        return 2 * addr_width + 2 * 1 + timestamp_width + EventPayloadFormat.WIDTH

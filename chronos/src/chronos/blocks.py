@@ -316,7 +316,9 @@ class NeuronParameter:
     k2: int
     neuron_addr_width: int
     spike_threshold: Q4_12
-    max_fanout_spike_capacity: int
+    max_fanout_spike_capacity: int = 4
+    timestamp_width: int = 8
+    buffer_depth: int = 4
 
 
 class SecondOrderShiftDecay:
@@ -871,11 +873,48 @@ class Crossbar8x8(SequentialModule):
 
 
 class Router(SequentialModule):
+    __crossbar: Crossbar8x8
+    __ingress_buffers: list[BoundedQueue[Packet]]
+    __egress_buffers: list[BoundedQueue[Packet]]
+
+    def __init__(self, router_loc: Coordinate, param: NeuronParameter):
+        desired_width = Packet.get_width_with(
+            param.neuron_addr_width, param.timestamp_width
+        )
+        self.__crossbar = Crossbar8x8(router_loc)
+        self.__ingress_buffers = [
+            BoundedQueue[Packet](param.buffer_depth, desired_width) for _ in Direction
+        ]
+        self.__egress_buffers = [
+            BoundedQueue[Packet](param.buffer_depth, desired_width) for _ in Direction
+        ]
+
     def reset(self):
-        pass
+        self.__crossbar.reset()
+        for dir in Direction:
+            self.__ingress_buffers[dir].reset()
+            self.__egress_buffers[dir].reset()
+
+    def pop_packet_from(self, from_direction: Direction) -> tuple[bool, Packet | None]:
+        buffer = self.__egress_buffers[from_direction]
+        return buffer.pop()
+
+    def push_packet_from(self, packet: Packet, from_direction: Direction) -> bool:
+        buffer = self.__ingress_buffers[from_direction]
+        return buffer.push(packet)
 
     def update(self):
-        pass
+        self.__crossbar.update()
+        for dir in Direction:
+            self.__ingress_buffers[dir].update()
+            self.__egress_buffers[dir].update()
+
+        # TODO: For every update, pass the pending
+        # element to crossbar and update every
+        # egress buffer whenever available.
 
     def commit(self):
-        pass
+        self.__crossbar.commit()
+        for dir in Direction:
+            self.__ingress_buffers[dir].commit()
+            self.__egress_buffers[dir].commit()
